@@ -64,13 +64,15 @@ export default function EmergencyPanel({ record, onClose }: EmergencyPanelProps)
               </div>
             )}
 
-            <div className="mt-6">
-              <div className="text-xs font-black uppercase tracking-[0.25em] text-slate-400">AFTN 地址</div>
-              <div className="mt-1 flex items-center gap-3">
-                <span className="font-mono text-2xl font-black text-sky-700">{record.aftnAddress}</span>
-                <CopyButton value={record.aftnAddress} label="AFTN" />
+            {record.aftnAddress && (
+              <div className="mt-6">
+                <div className="text-xs font-black uppercase tracking-[0.25em] text-slate-400">AFTN 地址</div>
+                <div className="mt-1 flex items-center gap-3">
+                  <span className="font-mono text-2xl font-black text-sky-700">{record.aftnAddress}</span>
+                  <CopyButton value={record.aftnAddress} label="AFTN" />
+                </div>
               </div>
-            </div>
+            )}
 
             <div className="mt-6">
               <div className="text-xs font-black uppercase tracking-[0.25em] text-slate-400">守聽頻率</div>

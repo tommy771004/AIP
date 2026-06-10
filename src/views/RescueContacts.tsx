@@ -147,13 +147,15 @@ export default function RescueContacts({ records, isLoading, onCall }: RescueCon
                       <dd className="font-mono font-bold text-on-surface">{record.faxNumber}</dd>
                     </div>
                   )}
-                  <div className="flex items-center justify-between gap-2">
-                    <dt className="shrink-0 font-bold text-slate-400">AFTN</dt>
-                    <dd className="flex items-center gap-2">
-                      <span className="font-mono font-bold text-sky-600">{record.aftnAddress}</span>
-                      <CopyButton value={record.aftnAddress} label="AFTN" />
-                    </dd>
-                  </div>
+                  {record.aftnAddress && (
+                    <div className="flex items-center justify-between gap-2">
+                      <dt className="shrink-0 font-bold text-slate-400">AFTN</dt>
+                      <dd className="flex items-center gap-2">
+                        <span className="font-mono font-bold text-sky-600">{record.aftnAddress}</span>
+                        <CopyButton value={record.aftnAddress} label="AFTN" />
+                      </dd>
+                    </div>
+                  )}
                   <div className="flex items-center justify-between gap-2">
                     <dt className="shrink-0 font-bold text-slate-400">頻率</dt>
                     <dd className="truncate font-mono text-xs font-bold text-slate-500">{record.vhfFreq.join(' / ')}</dd>

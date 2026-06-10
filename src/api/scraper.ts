@@ -73,10 +73,26 @@ export const SCRAPER_SOURCES: Record<string, ScraperSourceDefinition> = {
   HONG_KONG: {
     name: '香港 CAD AIS',
     url: 'https://www.ais.gov.hk/',
-    fallbackGen33Url: 'https://www.ais.gov.hk/',
+    fallbackGen33Url: 'https://www.ais.gov.hk/ais.json',
     regionCode: 'HK',
     firName: 'Hong Kong FIR',
     firIcao: 'VHHK',
+  },
+  INDIA: {
+    name: '印度 AAI AIM eAIP',
+    url: 'https://aim-india.aai.aero/eaip-v2/',
+    fallbackGen33Url: 'https://aim-india.aai.aero/eaip-v2/eAIP/EC-GEN-3.3-en-GB.html',
+    regionCode: 'IN',
+    firName: 'India FIRs',
+    firIcao: 'VIDF',
+  },
+  FRANCE: {
+    name: '法國 SIA eAIP France',
+    url: 'https://www.sia.aviation-civile.gouv.fr/',
+    fallbackGen33Url: 'https://www.sia.aviation-civile.gouv.fr/media/dvd/',
+    regionCode: 'FR',
+    firName: 'France FIRs',
+    firIcao: 'LFFF',
   },
   CANADA: {
     name: '加拿大 Nav Canada AIP',
@@ -567,6 +583,186 @@ async function scrapeSingaporeCaas(): Promise<FirContactRecord[]> {
 }
 
 // ──────────────────────────────────────────────
+//  香港：CAD AIS（入口為 JS 動態站，但 ais.json 提供 AMDT 日期，
+//  eAIP 包路徑可由其推導：eaip_<pubDate>/<effDate>-000000/html/）
+// ──────────────────────────────────────────────
+
+async function scrapeHongKongCad(): Promise<FirContactRecord[]> {
+  const source = SCRAPER_SOURCES.HONG_KONG;
+
+  try {
+    const meta = await axios.get(`${source.url}ais.json`, {
+      timeout: 12000,
+      headers: { 'User-Agent': 'Mozilla/5.0 (AIP Ops Bot)' },
+      validateStatus: (status) => status < 500,
+    });
+    if (meta.status >= 400) return [];
+
+    const amdt = meta.data?.amdt?.[0];
+    if (!amdt?.pubDate || !amdt?.effDate) return [];
+
+    const gen33Url = `${source.url}eaip_${String(amdt.pubDate).replace(/-/g, '')}/${amdt.effDate}-000000/html/eAIP/VH-GEN-3.3-en-US.html`;
+    const page = await fetchPage(gen33Url);
+    if (page.status >= 400) return [];
+
+    // GEN 3.3 無 ACC 表格，聯絡資料在「Responsible Service」段落（散文格式）
+    const text = sanitizeText(cheerio.load(page.data)('body').text());
+    const phone = text.match(/Telephone Number\s*:\s*(\d{4}\s?\d{4})/i)?.[1];
+    const fax = text.match(/Telefax Number\s*:\s*(\d{4}\s?\d{4})/i)?.[1];
+    const aftn = text.match(/AFS Address\s*:\s*(VH[A-Z]{6})/i)?.[1];
+    if (!phone || !aftn) return [];
+
+    const toIntl = (raw: string) => `+852-${raw.replace(/\s/g, '').replace(/^(\d{4})(\d{4})$/, '$1-$2')}`;
+
+    return [
+      buildRecord({
+        id: 'VHHK-ACC',
+        firIcao: 'VHHK',
+        firName: 'Hong Kong FIR',
+        regionCode: source.regionCode,
+        facilityName: 'Hong Kong ATC (ATM Division, CAD)',
+        facilityType: 'ACC',
+        phoneNumber: toIntl(phone),
+        faxNumber: fax ? toIntl(fax) : undefined,
+        aftnAddress: aftn,
+        vhfFreq: [GUARD_FREQ],
+        sourceName: source.name,
+        sourceUrl: gen33Url,
+      }),
+    ];
+  } catch {
+    return [];
+  }
+}
+
+// ──────────────────────────────────────────────
+//  印度：AAI AIM eAIP（/eaip-v2/ 為當前生效別名，標準 Eurocontrol 結構）
+//  GEN 3.3 表格：No | Unit | Postal | Tel | Fax | email | AFS，共 11 個 ACC
+// ──────────────────────────────────────────────
+
+/** AFS 前兩碼 → 所屬 FIR（印度四大 FIR；ICAO 代碼為穩定識別符，非爬取值） */
+const INDIA_FIR_BY_PREFIX: Record<string, { firIcao: string; firName: string }> = {
+  VA: { firIcao: 'VABF', firName: 'Mumbai FIR' },
+  VE: { firIcao: 'VECF', firName: 'Kolkata FIR' },
+  VI: { firIcao: 'VIDF', firName: 'Delhi FIR' },
+  VO: { firIcao: 'VOMF', firName: 'Chennai FIR' },
+};
+
+async function scrapeIndiaAai(): Promise<FirContactRecord[]> {
+  const source = SCRAPER_SOURCES.INDIA;
+
+  try {
+    const page = await fetchPage(source.fallbackGen33Url);
+    if (page.status >= 400) return [];
+
+    const $ = cheerio.load(page.data);
+    const records: FirContactRecord[] = [];
+
+    $('tr').each((_, row) => {
+      const cells = $(row).children('td').map((__, cell) => sanitizeText($(cell).text())).get();
+      if (cells.length < 7) return;
+
+      const unitName = cells[1];
+      if (!/\bACC\b/.test(unitName) || unitName.length > 40) return;
+
+      const phoneRaw = cells[3].match(/\b91[-\s]?[\d][\d\s/-]{7,18}\b/)?.[0];
+      const faxRaw = cells[4].match(/\b91[-\s]?[\d][\d\s/-]{7,18}\b/)?.[0];
+      const aftn = cells[6].match(/\bV[A-Z]{3}Z[A-Z]ZX\b/)?.[0];
+      if (!phoneRaw || !aftn) return;
+
+      const fir = INDIA_FIR_BY_PREFIX[aftn.slice(0, 2)];
+      if (!fir) return;
+
+      // 印度電話格式不一（含斜線多號碼），取第一組並保留來源連字號
+      const phone = `+${phoneRaw.split('/')[0].replace(/\s+/g, '')}`;
+
+      records.push(buildRecord({
+        id: `IN-${aftn}`,
+        firIcao: fir.firIcao,
+        firName: fir.firName,
+        regionCode: source.regionCode,
+        facilityName: unitName,
+        facilityType: 'ACC',
+        phoneNumber: phone,
+        faxNumber: faxRaw ? `+${faxRaw.split('/')[0].replace(/\s+/g, '')}` : undefined,
+        aftnAddress: aftn,
+        vhfFreq: [GUARD_FREQ],
+        sourceName: source.name,
+        sourceUrl: source.fallbackGen33Url,
+      }));
+    });
+
+    return records;
+  } catch {
+    return [];
+  }
+}
+
+// ──────────────────────────────────────────────
+//  法國：SIA eAIP（URL 可由 AIRAC 生效日推導：
+//  media/dvd/eAIP_<DD_MMM_YYYY>/FRANCE/AIRAC-<YYYY-MM-DD>/html/eAIP/FR-GEN-3.3-fr-FR.html）
+//  GEN 3.3 列出 5 個 CRNA（en-route 管制中心），有 TEL/FAX、無 AFTN
+// ──────────────────────────────────────────────
+
+const FRANCE_CRNA_DEFS: Array<{ key: string; firIcao: string; firName: string; facilityName: string }> = [
+  { key: 'CRNA Nord', firIcao: 'LFFF', firName: 'Paris FIR', facilityName: 'CRNA Nord (Athis-Mons)' },
+  { key: 'CRNA Est', firIcao: 'LFEE', firName: 'Reims FIR', facilityName: 'CRNA Est (Reims)' },
+  { key: 'CRNA Sud-Est', firIcao: 'LFMM', firName: 'Marseille FIR', facilityName: 'CRNA Sud-Est (Aix-en-Provence)' },
+  { key: 'CRNA Sud-Ouest', firIcao: 'LFBB', firName: 'Bordeaux FIR', facilityName: 'CRNA Sud-Ouest (Mérignac)' },
+  { key: 'CRNA Ouest', firIcao: 'LFRR', firName: 'Brest FIR', facilityName: 'CRNA Ouest (Loperhet)' },
+];
+
+function franceGen33Url(airacDate: string) {
+  const [year, month, day] = airacDate.split('-');
+  const monthAbbr = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'][Number(month) - 1];
+  return `https://www.sia.aviation-civile.gouv.fr/media/dvd/eAIP_${day}_${monthAbbr}_${year}/FRANCE/AIRAC-${airacDate}/html/eAIP/FR-GEN-3.3-fr-FR.html`;
+}
+
+function normalizeFrPhone(raw: string) {
+  const digits = raw.replace(/\D/g, '');
+  return `+33-${digits.slice(0, 1)}-${digits.slice(1).replace(/(\d{2})(?=\d)/g, '$1-')}`;
+}
+
+async function scrapeFranceSia(): Promise<FirContactRecord[]> {
+  const source = SCRAPER_SOURCES.FRANCE;
+
+  try {
+    const url = franceGen33Url(getCurrentAiracDate());
+    const page = await fetchPage(url);
+    if (page.status >= 400) return [];
+
+    const text = sanitizeText(cheerio.load(page.data)('body').text());
+    const records: FirContactRecord[] = [];
+
+    // 注意：CRNA Sud-Est/Sud-Ouest 含 "CRNA Est"/"CRNA Ouest" 子字串，匹配時需排除前綴誤中
+    for (const def of FRANCE_CRNA_DEFS) {
+      const pattern = new RegExp(`(?<![A-Za-z-])${def.key}(?![a-zA-Z-])[\\s\\S]{0,200}?TEL\\s*:\\s*\\(33\\)\\s*\\(0\\)\\s*([\\d ]{8,14})(?:FAX\\s*:\\s*\\(33\\)\\s*\\(0\\)\\s*([\\d ]{8,14}))?`);
+      const match = text.match(pattern);
+      if (!match) continue;
+
+      records.push(buildRecord({
+        id: `FR-${def.firIcao}`,
+        firIcao: def.firIcao,
+        firName: def.firName,
+        regionCode: source.regionCode,
+        facilityName: def.facilityName,
+        facilityType: 'ACC',
+        phoneNumber: normalizeFrPhone(match[1]),
+        faxNumber: match[2] ? normalizeFrPhone(match[2]) : undefined,
+        aftnAddress: '', // GEN 3.3 未刊載 CRNA 的 AFS 位址，誠實留空
+        vhfFreq: [GUARD_FREQ],
+        sourceName: source.name,
+        sourceUrl: url,
+      }));
+    }
+
+    return records;
+  } catch {
+    return [];
+  }
+}
+
+// ──────────────────────────────────────────────
 //  彙整
 // ──────────────────────────────────────────────
 
@@ -583,6 +779,9 @@ export async function getFirContactsPaginated(options: GetContactsOptions = {}):
     scrapeTaiwanANWS(),
     scrapeUKEAip(),
     scrapeSingaporeCaas(),
+    scrapeHongKongCad(),
+    scrapeIndiaAai(),
+    scrapeFranceSia(),
   ]);
 
   const deduped = Array.from(

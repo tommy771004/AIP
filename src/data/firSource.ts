@@ -12,6 +12,8 @@ export const REGION_LABELS: Record<string, string> = {
   BR: '巴西',
   EU: '歐洲',
   NZ: '紐西蘭',
+  IN: '印度',
+  FR: '法國',
 };
 
 export const REGION_FLAGS: Record<string, string> = {
@@ -26,6 +28,8 @@ export const REGION_FLAGS: Record<string, string> = {
   BR: 'BR',
   EU: 'EU',
   NZ: 'NZ',
+  IN: 'IN',
+  FR: 'FR',
 };
 
 export const REGION_MAP_CONFIG: Record<string, RegionMapConfig> = {
@@ -105,6 +109,20 @@ export const REGION_MAP_CONFIG: Record<string, RegionMapConfig> = {
     shortName: '紐西蘭',
     accentClass: 'from-teal-200 via-emerald-300 to-cyan-300',
     haloClass: 'bg-teal-400/25',
+  },
+  IN: {
+    top: '38%',
+    left: '47%',
+    shortName: '印度',
+    accentClass: 'from-orange-200 via-amber-300 to-yellow-300',
+    haloClass: 'bg-orange-400/25',
+  },
+  FR: {
+    top: '26%',
+    left: '28%',
+    shortName: '法國',
+    accentClass: 'from-blue-200 via-indigo-200 to-violet-300',
+    haloClass: 'bg-blue-400/25',
   },
 };
 
