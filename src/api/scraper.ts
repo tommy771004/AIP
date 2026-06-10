@@ -134,6 +134,14 @@ export const SCRAPER_SOURCES: Record<string, ScraperSourceDefinition> = {
     firName: 'Oakland ARTCC',
     firIcao: 'KZOA',
   },
+  SPAIN: {
+    name: '西班牙 ENAIRE AIP',
+    url: 'https://aip.enaire.es/AIP/',
+    fallbackGen33Url: 'https://aip.enaire.es/AIP/contenido_AIP/GEN/LE_GEN_3_3_en.html',
+    regionCode: 'ES',
+    firName: 'Spain FIRs',
+    firIcao: 'LECM',
+  },
 };
 
 interface RealtimeContact {
@@ -768,6 +776,60 @@ async function scrapeFranceSia(): Promise<FirContactRecord[]> {
 }
 
 // ──────────────────────────────────────────────
+//  西班牙：ENAIRE AIP (Static URL for GEN 3.3)
+// ──────────────────────────────────────────────
+
+async function scrapeSpainEnaire(): Promise<FirContactRecord[]> {
+  const source = SCRAPER_SOURCES.SPAIN;
+  try {
+    const page = await fetchPage(source.fallbackGen33Url);
+    if (page.status >= 400) return [];
+    
+    const $ = cheerio.load(page.data);
+    const records: FirContactRecord[] = [];
+    
+    $('tr').each((_, row) => {
+      const cells = $(row).children('td').map((__, cell) => sanitizeText($(cell).text())).get();
+      if (cells.length < 4) return;
+      
+      const unitName = cells[0];
+      if (!/\bACC\b/i.test(unitName) && !/\bTACC\b/i.test(unitName)) return;
+      
+      const contactInfo = cells[2];
+      const aftn = cells[3].match(/\bLE[A-Z]{6}\b/)?.[0];
+      if (!aftn) return;
+      
+      // Parse phone/fax. Spain has format: "TEL: +34-916 785 101 FAX: +34-916 785 492 E-mail:..."
+      const phoneMatch = contactInfo.match(/TEL:\s*([+\d-\s]{9,20})/i);
+      const phone = phoneMatch ? sanitizeText(phoneMatch[1]) : undefined;
+      const faxMatch = contactInfo.match(/FAX:\s*([+\d-\s]{9,20})/i);
+      const fax = faxMatch ? sanitizeText(faxMatch[1]) : undefined;
+      
+      if (!phone) return;
+      
+      records.push(buildRecord({
+        id: `ES-${aftn}`,
+        firIcao: aftn.slice(0, 4),
+        firName: unitName.replace(/\b(ACC|TACC)\b/ig, '').trim() + ' FIR',
+        regionCode: source.regionCode,
+        facilityName: unitName,
+        facilityType: 'ACC',
+        phoneNumber: phone.replace(/\s+/g, ''),
+        faxNumber: fax ? fax.replace(/\s+/g, '') : undefined,
+        aftnAddress: aftn,
+        vhfFreq: [GUARD_FREQ],
+        sourceName: source.name,
+        sourceUrl: source.fallbackGen33Url
+      }));
+    });
+    
+    return records;
+  } catch {
+    return [];
+  }
+}
+
+// ──────────────────────────────────────────────
 //  彙整
 // ──────────────────────────────────────────────
 
@@ -787,6 +849,7 @@ export async function getFirContactsPaginated(options: GetContactsOptions = {}):
     scrapeHongKongCad(),
     scrapeIndiaAai(),
     scrapeFranceSia(),
+    scrapeSpainEnaire(),
   ]);
 
   const deduped = Array.from(
