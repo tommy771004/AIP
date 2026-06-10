@@ -1,0 +1,83 @@
+@import "tailwindcss";
+
+@theme {
+  --color-surface: #fbf9f8;
+  --color-surface-dim: #dbdad9;
+  --color-surface-container-low: #f5f3f2;
+  --color-surface-container: #efeded;
+  --color-surface-container-high: #eae8e7;
+  --color-surface-highest: #e4e2e1;
+  --color-on-surface: #1b1c1c;
+  --color-on-surface-variant: #424848;
+  --color-primary: #516161;
+  --color-on-primary: #ffffff;
+  --color-primary-container: #e0f2f1;
+  --color-on-primary-container: #5e6f6e;
+  --color-secondary: #ac3509;
+  --color-on-secondary: #ffffff;
+  --color-secondary-container: #fe6f42;
+  --color-on-secondary-container: #631800;
+  --color-tertiary: #546067;
+  --color-tertiary-container: #e3f0f8;
+  --color-error: #ba1a1a;
+  --color-on-error: #ffffff;
+  --color-error-container: #ffdad6;
+  --color-background: #fbf9f8;
+
+  --font-sans: "Quicksand", sans-serif;
+}
+
+@layer utilities {
+  .squircle-shadow {
+    box-shadow: -4px -4px 10px rgba(255, 255, 255, 0.8), 4px 4px 10px rgba(0, 0, 0, 0.05);
+  }
+  .squircle-inset {
+    box-shadow: inset 4px 4px 10px rgba(0, 0, 0, 0.1), inset -4px -4px 10px rgba(255, 255, 255, 0.8);
+  }
+  .glass-panel {
+    background: rgba(251, 249, 248, 0.7);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.5);
+  }
+  .blob-anim {
+    transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  .blob-anim:active {
+    transform: scale(0.95);
+  }
+  .pulse-glow {
+    animation: pulse-border 2s infinite;
+  }
+  @keyframes pulse-border {
+    0% { box-shadow: 0 0 0 0 rgba(186, 26, 26, 0.4); }
+    70% { box-shadow: 0 0 0 20px rgba(186, 26, 26, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(186, 26, 26, 0); }
+  }
+  .pulse-active {
+    animation: pulse-active-anim 2s infinite ease-in-out;
+  }
+  @keyframes pulse-active-anim {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.7; transform: scale(1.05); }
+  }
+  @keyframes pulse-ring {
+    0% { transform: scale(0.8); opacity: 0.5; }
+    100% { transform: scale(1.5); opacity: 0; }
+  }
+  .pulse-wave {
+    position: absolute;
+    border-radius: 50%;
+    border: 2px solid var(--color-secondary);
+    animation: pulse-ring 2s infinite cubic-bezier(0.215, 0.61, 0.355, 1);
+  }
+  .pulse-wave-2 { animation-delay: 0.5s; }
+  .pulse-wave-3 { animation-delay: 1s; }
+  @keyframes subtle-bounce {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-5px); }
+  }
+  .animate-bounce-subtle {
+    animation: subtle-bounce 3s infinite ease-in-out;
+  }
+}
