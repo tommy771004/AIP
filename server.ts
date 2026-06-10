@@ -2,7 +2,12 @@ import express from "express";
 import path from "path";
 import cors from "cors";
 import { createServer as createViteServer } from "vite";
-import { getFirContacts } from "./src/api/scraper.js";
+import {
+  getFirContacts,
+  getFirContactsPaginated,
+  validateAllSources,
+  SCRAPER_SOURCES,
+} from "./src/api/scraper.js";
 
 async function startServer() {
   const app = express();
@@ -11,40 +16,81 @@ async function startServer() {
   app.use(cors());
   app.use(express.json());
 
-  // ==========================================
-  // API Routes (Must be defined BEFORE Vite middleware)
-  // ==========================================
-  
-  app.get("/api/health", (req, res) => {
+  // ──────────────────────────────────────────────
+  //  API Routes
+  // ──────────────────────────────────────────────
+
+  app.get("/api/health", (_req, res) => {
     res.json({ status: "ok", timestamp: new Date().toISOString() });
   });
 
-  // Main endpoint to fetch FIR contacts using the scraper
+  /**
+   * GET /api/contacts
+   * Query params:
+   *   regionCode  - filter by 2-letter region code (TW, JP, AU, UK, US)
+   *   page        - 1-indexed page number (default 1)
+   *   pageSize    - items per page (default 20, max 100)
+   */
   app.get("/api/contacts", async (req, res) => {
     try {
-      const contacts = await getFirContacts();
-      res.json({ success: true, data: contacts });
+      const regionCode = typeof req.query.regionCode === "string"
+        ? req.query.regionCode
+        : undefined;
+      const page = Math.max(1, parseInt(String(req.query.page ?? "1"), 10) || 1);
+      const pageSize = Math.min(
+        100,
+        Math.max(1, parseInt(String(req.query.pageSize ?? "20"), 10) || 20)
+      );
+
+      const result = await getFirContactsPaginated({ regionCode, page, pageSize });
+      res.json({ success: true, ...result });
     } catch (error: any) {
       console.error("Scraper Error:", error);
       res.status(500).json({ success: false, error: error.message });
     }
   });
 
-  // ==========================================
-  // Vite Middleware & Static Serving
-  // ==========================================
+  /**
+   * GET /api/regions
+   * Returns the list of known scraper region codes and their display names.
+   */
+  app.get("/api/regions", (_req, res) => {
+    const regions = Object.entries(SCRAPER_SOURCES).map(([key, s]) => ({
+      key,
+      regionCode: s.regionCode,
+      region: s.region,
+      sourceName: s.name,
+      sourceUrl: s.url,
+    }));
+    res.json({ success: true, data: regions });
+  });
+
+  /**
+   * GET /api/sources/validate
+   * Checks whether each configured eAIP source URL is reachable.
+   */
+  app.get("/api/sources/validate", async (_req, res) => {
+    try {
+      const validations = await validateAllSources();
+      res.json({ success: true, data: validations });
+    } catch (error: any) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  // ──────────────────────────────────────────────
+  //  Vite Middleware & Static Serving
+  // ──────────────────────────────────────────────
   if (process.env.NODE_ENV !== "production") {
-    // Development mode: Use Vite's middleware
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
     });
     app.use(vite.middlewares);
   } else {
-    // Production mode: Serve static files from dist/
     const distPath = path.join(process.cwd(), "dist");
     app.use(express.static(distPath));
-    app.get("*", (req, res) => {
+    app.get("*", (_req, res) => {
       res.sendFile(path.join(distPath, "index.html"));
     });
   }
