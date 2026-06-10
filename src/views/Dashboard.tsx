@@ -1,11 +1,27 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { GlassPanel } from '../components/StyledComponents';
+import { DashboardData } from '../types';
+import { MOCK_DASHBOARD } from '../data/firSource';
 
 interface DashboardProps {
   onTriggerSOS: () => void;
 }
 
 export default function Dashboard({ onTriggerSOS }: DashboardProps) {
+  const [data, setData] = useState<DashboardData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+
+  useEffect(() => {
+    setLoading(true);
+    // Simulate async network request
+    setTimeout(() => {
+      setData(MOCK_DASHBOARD);
+      setLastUpdated(new Date());
+      setLoading(false);
+    }, 300);
+  }, []);
+
   return (
     <div className="flex flex-col gap-6 pt-6">
       {/* Status Panel */}
@@ -13,19 +29,31 @@ export default function Dashboard({ onTriggerSOS }: DashboardProps) {
         <div className="absolute top-0 right-0 w-32 h-32 bg-primary-container rounded-full blur-3xl opacity-50 -mr-10 -mt-10"></div>
         <div className="flex items-start justify-between relative z-10">
           <div>
-            <h2 className="text-[14px] font-medium text-on-surface-variant uppercase tracking-wider mb-1">Current Sector</h2>
-            <div className="text-[24px] md:text-[32px] font-bold text-on-surface flex items-center gap-2">
-              Taipei FIR
-              <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-primary-container text-on-primary-container squircle-inset">
-                <span className="material-symbols-outlined text-sm">check_circle</span>
-              </span>
+            <div className="flex items-center gap-2 mb-1">
+              <h2 className="text-[14px] font-medium text-on-surface-variant uppercase tracking-wider">目前區域</h2>
+              {loading && <span className="material-symbols-outlined text-sm animate-spin text-primary">sync</span>}
             </div>
+            <div className="text-[24px] md:text-[32px] font-bold text-on-surface flex items-center gap-2">
+              {loading ? '載入中...' : data?.currentSectorName}
+              {!loading && data && (
+                <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-primary-container text-on-primary-container squircle-inset">
+                  <span className="material-symbols-outlined text-sm">check_circle</span>
+                </span>
+              )}
+            </div>
+            {lastUpdated && !loading && (
+              <div className="text-[12px] text-on-surface-variant mt-2 opacity-80">
+                最後更新: {lastUpdated.toLocaleTimeString()}
+              </div>
+            )}
           </div>
           <div className="flex flex-col items-end">
-            <span className="text-[12px] font-bold tracking-widest text-primary bg-primary-container px-3 py-1 rounded-full mb-2 squircle-inset uppercase">Secure Link</span>
+            <span className="text-[12px] font-bold tracking-widest text-primary bg-primary-container px-3 py-1 rounded-full mb-2 squircle-inset uppercase">
+              {loading ? '...' : data?.connectionStatus}
+            </span>
             <div className="text-[14px] font-medium text-on-surface-variant flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-secondary pulse-glow"></span>
-              Active Monitoring
+              {!loading && <span className="w-2 h-2 rounded-full bg-secondary pulse-glow"></span>}
+              {loading ? '...' : data?.monitoringStatus}
             </div>
           </div>
         </div>
@@ -43,16 +71,18 @@ export default function Dashboard({ onTriggerSOS }: DashboardProps) {
             <span className="text-[32px] font-bold text-on-error tracking-widest uppercase">SOS</span>
           </button>
         </div>
-        <p className="text-[14px] font-medium text-on-surface-variant text-center mt-4 px-8">Press and hold for 3 seconds to broadcast emergency to Taipei FIR control.</p>
+        <p className="text-[14px] font-medium text-on-surface-variant text-center mt-4 px-8">
+          長按 3 秒鐘將緊急情況廣播至{data?.currentSectorName || '飛航情報區管制中心'}。
+        </p>
       </section>
 
       {/* Quick Actions Grid */}
       <section className="grid grid-cols-2 gap-4">
         {[
-          { label: 'ATC Direct', icon: 'headset_mic', bg: 'bg-tertiary-container', fg: 'text-on-tertiary-container' },
-          { label: 'Rescue', icon: 'medical_services', bg: 'bg-secondary-container', fg: 'text-on-secondary-container' },
-          { label: 'METAR', icon: 'cloud', bg: 'bg-surface-container-high', fg: 'text-on-surface-variant' },
-          { label: 'System', icon: 'speed', bg: 'bg-surface-container-high', fg: 'text-on-surface-variant' },
+          { label: '航管直通', icon: 'headset_mic', bg: 'bg-tertiary-container', fg: 'text-on-tertiary-container' },
+          { label: '救援單位', icon: 'medical_services', bg: 'bg-secondary-container', fg: 'text-on-secondary-container' },
+          { label: '航空氣象', icon: 'cloud', bg: 'bg-surface-container-high', fg: 'text-on-surface-variant' },
+          { label: '系統狀態', icon: 'speed', bg: 'bg-surface-container-high', fg: 'text-on-surface-variant' },
         ].map((item) => (
           <button key={item.label} className="glass-panel p-5 rounded-2xl squircle-shadow flex flex-col items-center justify-center gap-3 active:squircle-inset active:scale-95 transition-all">
             <div className={`w-14 h-14 rounded-full ${item.bg} flex items-center justify-center squircle-inset`}>

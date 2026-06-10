@@ -26,8 +26,8 @@ export default function App() {
         {activeTab === 'chat' && (
             <div className="flex flex-col items-center justify-center h-64 text-outline mt-20">
               <span className="material-symbols-outlined text-[64px] mb-4">chat_bubble_outline</span>
-              <span className="text-xl font-bold">Secure Chat Module</span>
-              <span className="text-sm">Connecting to secure messaging terminal...</span>
+              <span className="text-xl font-bold">安全對話模組</span>
+              <span className="text-sm">正在連線至安全通訊終端...</span>
             </div>
         )}
       </Container>

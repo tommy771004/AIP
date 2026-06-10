@@ -89,20 +89,27 @@ export default function RescueContacts({ onCall }: RescueContactsProps) {
     if (type === 'RCC') {
       return {
         image: "https://lh3.googleusercontent.com/aida-public/AB6AXuBGLxrSSSQ1LdNN7vHh8Wd6_NW1VA44f4_c3hUXFy-lpA5ihbhoATp_Jamaqd11VAVpE3qPNx-4eS-v9xaWGmJpgGSSvukFPZJbpzXA_KXd8EW3pVzaCgL8--Q9NxO2XOHrMeLpPt5IFM3YYxziZ-kqLVKK-QhEDnG1fxY5wwrsYMwuKKqnnjL8B5P7uoNpP641GXI9bEwDXzSkdJ3KiPRksAKb1l_8pxW-Idtr34Lkh3oajoegVET-aEVK_Y7MgceyyER52vLxC1oJ",
-        status: "On Call", statusColor: "secondary", active: true,
-        btnLabel: "Direct Line", btnIcon: "call", btnClass: "bg-surface text-secondary", offset: "md:mt-4", bgImg: "bg-tertiary-container"
+        status: "待命中", statusColor: "secondary", active: true,
+        btnLabel: "直撥專線", btnIcon: "call", btnClass: "bg-surface text-secondary", offset: "md:mt-4", bgImg: "bg-tertiary-container"
       };
     } else if (type === 'MED') {
       return {
         image: "https://lh3.googleusercontent.com/aida-public/AB6AXuCKav4-Af3U3K5U2Z8o_4dMSONWcIiwO4B80JePe6LfDnLa4GPV1evEj45SBU1-UKrvMfs7mB0by6fTuCUJasctolVpBEk2UhMM0jXQdwjTe_Cohinc_rGzrEYoPKILACQi42EsMz8e1a1HVIDtsFvKKJkN57Uv0FN00TbRPkY3eVWTeVnqkSPkufhcd6LRMuQ_SNdbS3JgAt9EfO_-H9VfQ6JwPv3hDYefv5rrCN4g686_CpgP4PqeK2PXuMrcnyjZOeUXVp-2FyUl",
-        status: "Active", statusColor: "secondary", active: true,
-        btnLabel: "Med-Call", btnIcon: "emergency", btnClass: "bg-secondary text-on-secondary", offset: "", bgImg: "bg-primary-container"
+        status: "活動中", statusColor: "secondary", active: true,
+        btnLabel: "醫療專線", btnIcon: "emergency", btnClass: "bg-secondary text-on-secondary", offset: "", bgImg: "bg-primary-container"
+      };
+    } else if (['ACC', 'TWR', 'ARTCC', 'TWR/APP', 'APP', 'FIC', 'AFIS'].includes(type)) {
+      return {
+        image: "https://lh3.googleusercontent.com/aida-public/AB6AXuDaLTSyZe7bIDDymdNJeuafp91CwrWKBA9iDtjBdgU3JahEOeXVKa_CtlanGrsBuzscFy7GEyw9uAwd_K13GD3EszQk9R-LXMg1EIvLTBMh_0waGdrY_38e-27i1qMTIlflI4VPjhCowfSYjdfm_Y36LWB2vHtH18X0R6zYaM1_B4yuab7Xsh_aIVJmySPaPj_BdBysq0hBAfbKs2a-9PI-5kM2ed0d0pbS83yDuU4JHAb9AFyAfFTsb9Q3djz5uxetRG1Fu4-mORq5",
+        status: "監控中", statusColor: "primary", active: true,
+        btnLabel: "呼叫航管", btnIcon: "headset_mic", btnClass: "bg-surface text-primary",
+        offset: index % 2 === 0 ? "md:mt-8" : "md:mt-4", bgImg: "bg-tertiary-container"
       };
     } else {
       return {
         image: "https://lh3.googleusercontent.com/aida-public/AB6AXuDaLTSyZe7bIDDymdNJeuafp91CwrWKBA9iDtjBdgU3JahEOeXVKa_CtlanGrsBuzscFy7GEyw9uAwd_K13GD3EszQk9R-LXMg1EIvLTBMh_0waGdrY_38e-27i1qMTIlflI4VPjhCowfSYjdfm_Y36LWB2vHtH18X0R6zYaM1_B4yuab7Xsh_aIVJmySPaPj_BdBysq0hBAfbKs2a-9PI-5kM2ed0d0pbS83yDuU4JHAb9AFyAfFTsb9Q3djz5uxetRG1Fu4-mORq5",
-        status: "Standby", statusColor: "primary", active: false,
-        btnLabel: "Contact", btnIcon: "build", btnClass: "bg-surface text-primary",
+        status: "待命", statusColor: "primary", active: false,
+        btnLabel: "聯絡", btnIcon: "radar", btnClass: "bg-surface text-primary",
         offset: index % 2 === 0 ? "md:mt-8" : "md:mt-4", bgImg: "bg-tertiary-container"
       };
     }
@@ -112,10 +119,10 @@ export default function RescueContacts({ onCall }: RescueContactsProps) {
     <div className="pt-6 pb-20">
       {/* Header */}
       <div className="mb-6">
-        <h1 className="text-[24px] md:text-[32px] font-bold text-on-surface mb-1">Emergency Contacts</h1>
+        <h1 className="text-[24px] md:text-[32px] font-bold text-on-surface mb-1">緊急聯絡人</h1>
         <p className="text-[16px] font-medium text-on-surface-variant">
-          Live data from eAIP & NASR sources globally.
-          {total > 0 && <span className="ml-2 text-secondary">{total} contacts found</span>}
+          來自全球 eAIP 與 NASR 來源的即時資料。
+          {total > 0 && <span className="ml-2 text-secondary">找到 {total} 筆聯絡資訊</span>}
         </p>
       </div>
 
@@ -129,7 +136,7 @@ export default function RescueContacts({ onCall }: RescueContactsProps) {
               : 'bg-surface text-on-surface border-outline/30 hover:border-primary/50'
           }`}
         >
-          All Regions
+          所有區域
         </button>
         {availableRegions.map(r => (
           <button
@@ -154,12 +161,12 @@ export default function RescueContacts({ onCall }: RescueContactsProps) {
       {isLoading ? (
         <div className="flex flex-col items-center justify-center p-12 text-outline gap-4">
           <span className="material-symbols-outlined text-[48px] animate-spin">refresh</span>
-          <p className="text-lg">Scraping CAA databases...</p>
+          <p className="text-lg">正在從來源爬取資料...</p>
         </div>
       ) : contacts.length === 0 ? (
         <div className="flex flex-col items-center justify-center p-12 text-outline gap-3">
           <span className="material-symbols-outlined text-[48px]">search_off</span>
-          <p className="text-lg">No contacts found for this region.</p>
+          <p className="text-lg">在此區域找不到聯絡資訊。</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8 items-start">
@@ -182,9 +189,9 @@ export default function RescueContacts({ onCall }: RescueContactsProps) {
                         ? 'bg-green-100 text-green-700'
                         : 'bg-yellow-100 text-yellow-700'
                     }`}
-                    title={contact.sourceVerified ? `Source verified: ${contact.sourceUrl}` : `Source offline — using cache`}
+                    title={contact.sourceVerified ? `來源已驗證: ${contact.sourceUrl}` : `來源離線 — 使用快取`}
                   >
-                    {contact.sourceVerified ? '✓ Live' : '⚠ Cache'}
+                    {contact.sourceVerified ? '✓ 即時' : '⚠ 快取'}
                   </span>
                 </div>
 
@@ -283,7 +290,7 @@ export default function RescueContacts({ onCall }: RescueContactsProps) {
           </button>
 
           <span className="text-[13px] text-on-surface-variant ml-2">
-            Page {page} / {totalPages} ({total} total)
+            第 {page} / {totalPages} 頁 (共 {total} 筆)
           </span>
         </div>
       )}

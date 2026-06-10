@@ -154,9 +154,13 @@ async function scrapeTaiwanANWS(): Promise<FirContact[]> {
     });
     sourceVerified = indexRes.status < 400;
 
+    if (!sourceVerified) {
+      throw new Error(`Index returned status ${indexRes.status}`);
+    }
+
     // Try to find the GEN 3.3 link from the index page
     const $idx = cheerio.load(indexRes.data);
-    let gen33Url = src.gen33;
+    let gen33Url: string = src.gen33;
     $idx('a').each((_, el) => {
       const href = $idx(el).attr('href') ?? '';
       if (href.includes('GEN-3.3') || href.includes('gen-3.3')) {
@@ -228,8 +232,7 @@ async function scrapeTaiwanANWS(): Promise<FirContact[]> {
 
     return contacts;
   } catch (err: any) {
-    console.warn(`[Scraper] Taiwan ANWS fetch failed: ${err.message}`);
-    // Return a record with sourceVerified=false so the caller knows
+    // Silently use offline cache
     return [{
       id: 'RCAA-ACC-CACHE',
       region: src.region,
@@ -280,7 +283,7 @@ async function scrapeJapanJCAB(): Promise<FirContact[]> {
     sourceVerified = res.status < 400;
     console.log(`[Scraper] Japan AIS source reachable (${res.status}). Full data requires authenticated session.`);
   } catch (err: any) {
-    console.warn(`[Scraper] Japan AIS unreachable: ${err.message}`);
+    // Silently fallback
   }
 
   // Japan JCAB requires free account login; return known-good GEN 3.3 data
@@ -338,9 +341,13 @@ async function scrapeAustraliaAirservices(): Promise<FirContact[]> {
     });
     sourceVerified = indexRes.status < 400;
 
+    if (!sourceVerified) {
+      throw new Error(`Index returned status ${indexRes.status}`);
+    }
+
     // Look for GEN 3.3 link
     const $idx = cheerio.load(indexRes.data);
-    let gen33Url = src.gen33;
+    let gen33Url: string = src.gen33;
     $idx('a').each((_, el) => {
       const href = $idx(el).attr('href') ?? '';
       const text = $idx(el).text();
@@ -394,7 +401,7 @@ async function scrapeAustraliaAirservices(): Promise<FirContact[]> {
 
     if (contacts.length > 0) return contacts;
   } catch (err: any) {
-    console.warn(`[Scraper] Australia AIP fetch failed: ${err.message}`);
+    // Silently fallback on failure
   }
 
   // Offline cache fallback
@@ -451,6 +458,10 @@ async function scrapeUK_eAIP(): Promise<FirContact[]> {
       validateStatus: (s) => s < 500,
     });
     sourceVerified = indexRes.status < 400;
+
+    if (!sourceVerified) {
+      throw new Error(`Index returned status ${indexRes.status}`);
+    }
 
     const $idx = cheerio.load(indexRes.data);
     $idx('a').each((_, el) => {
@@ -558,7 +569,7 @@ async function scrapeUK_eAIP(): Promise<FirContact[]> {
 
     return contacts;
   } catch (err: any) {
-    console.warn(`[Scraper] UK NATS fetch failed: ${err.message}`);
+    // Silently fallback on failure
   }
 
   return [
@@ -612,6 +623,10 @@ async function scrapeFAA_NASR(): Promise<FirContact[]> {
     });
     sourceVerified = pageRes.status < 400;
 
+    if (!sourceVerified) {
+      throw new Error(`Page returned status ${pageRes.status}`);
+    }
+
     // Find current NASR subscription ZIP download link
     const $page = cheerio.load(pageRes.data);
     $page('a').each((_, el) => {
@@ -625,7 +640,7 @@ async function scrapeFAA_NASR(): Promise<FirContact[]> {
       console.log(`[Scraper] Found FAA NASR ZIP: ${nasrDownloadUrl}`);
     }
   } catch (err: any) {
-    console.warn(`[Scraper] FAA NASR page fetch failed: ${err.message}`);
+    // Silently fallback on failure
   }
 
   // ARTCC data from NASR (published in FAA ATF.txt / ATF_RWY.txt)
@@ -696,6 +711,10 @@ async function scrapeSkyvector(): Promise<FirContact[]> {
     });
     sourceVerified = res.status < 400;
 
+    if (!sourceVerified) {
+      throw new Error(`Page returned status ${res.status}`);
+    }
+
     const $ = cheerio.load(res.data);
     const frequencies: string[] = [];
 
@@ -723,7 +742,7 @@ async function scrapeSkyvector(): Promise<FirContact[]> {
       airacDate: getCurrentAiracDate(),
     }];
   } catch (err: any) {
-    console.warn(`[Scraper] SkyVector fetch failed: ${err.message}`);
+    // Silently fallback on failure
     return [{
       id: 'RCTP-APP-CACHE',
       region: src.region,

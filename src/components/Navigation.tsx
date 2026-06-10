@@ -8,10 +8,10 @@ interface NavProps {
 
 export default function Navigation({ activeTab, onTabChange }: NavProps) {
   const navItems = [
-    { id: 'sectors', icon: 'map', label: 'Sectors' },
-    { id: 'sos', icon: 'emergency', label: 'SOS', fill: true },
-    { id: 'rescue', icon: 'medical_services', label: 'Rescue', fill: true },
-    { id: 'chat', icon: 'chat_bubble', label: 'Chat' },
+    { id: 'sectors', icon: 'map', label: '區域' },
+    { id: 'sos', icon: 'emergency', label: '求救', fill: true },
+    { id: 'rescue', icon: 'medical_services', label: '救援', fill: true },
+    { id: 'chat', icon: 'chat_bubble', label: '對話' },
   ] as const;
 
   return (
@@ -33,7 +33,7 @@ export default function Navigation({ activeTab, onTabChange }: NavProps) {
                     : 'text-on-surface-variant font-medium hover:bg-white/10'
                 }`}
               >
-                <span className="material-symbols-outlined" style={item.fill && isActive ? {fontVariationSettings: "'FILL' 1"} : {}}>{item.icon}</span>
+                <span className="material-symbols-outlined" style={('fill' in item && item.fill) && isActive ? {fontVariationSettings: "'FILL' 1"} : {}}>{item.icon}</span>
                 <span className="text-[12px] font-bold tracking-wider uppercase">{item.label}</span>
               </button>
             )
@@ -61,7 +61,7 @@ export default function Navigation({ activeTab, onTabChange }: NavProps) {
                   : 'text-on-surface-variant hover:bg-surface-variant/50'
               }`}
             >
-              <span className="material-symbols-outlined" style={item.fill && isActive ? {fontVariationSettings: "'FILL' 1"} : {}}>{item.icon}</span>
+              <span className="material-symbols-outlined" style={('fill' in item && item.fill) && isActive ? {fontVariationSettings: "'FILL' 1"} : {}}>{item.icon}</span>
               <span className="text-[12px] font-bold tracking-wider uppercase mt-1">{item.label}</span>
             </button>
           )
