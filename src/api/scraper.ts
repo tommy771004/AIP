@@ -142,6 +142,14 @@ export const SCRAPER_SOURCES: Record<string, ScraperSourceDefinition> = {
     firName: 'Spain FIRs',
     firIcao: 'LECM',
   },
+  MALAYSIA: {
+    name: '馬來西亞 CAAM eAIP',
+    url: 'https://aip.caam.gov.my/',
+    fallbackGen33Url: 'https://aip.caam.gov.my/aip/eAIP/history-en-MS.html',
+    regionCode: 'MY',
+    firName: 'Kuala Lumpur FIR',
+    firIcao: 'WMFC',
+  },
 };
 
 interface RealtimeContact {
@@ -830,6 +838,72 @@ async function scrapeSpainEnaire(): Promise<FirContactRecord[]> {
 }
 
 // ──────────────────────────────────────────────
+//  馬來西亞：CAAM eAIP（Eurocontrol 標準結構）
+// ──────────────────────────────────────────────
+
+async function scrapeMalaysiaCaam(): Promise<FirContactRecord[]> {
+  const source = SCRAPER_SOURCES.MALAYSIA;
+  try {
+    const historyPage = await fetchPage(source.fallbackGen33Url);
+    if (historyPage.status >= 400) return [];
+
+    const indexUrl = findFirstLink(
+      historyPage.data,
+      source.fallbackGen33Url,
+      (href) => href.includes('html/index-en-MS.html')
+    );
+    if (!indexUrl) return [];
+
+    const gen33Url = indexUrl.replace('index-en-MS.html', 'eAIP/WM-GEN-3.3-en-MS.html');
+    const page = await fetchPage(gen33Url);
+    if (page.status >= 400) return [];
+
+    const $ = cheerio.load(page.data);
+    const records: FirContactRecord[] = [];
+
+    $('tr').each((_, row) => {
+      const cells = $(row).children('td').map((__, cell) => sanitizeText($(cell).text())).get();
+      if (cells.length < 2) return;
+
+      const unitName = cells[0];
+      if (!/\bACC\b/i.test(unitName) && !/ACCTUNIT/i.test(unitName)) return;
+
+      const fullText = cells.join(' ');
+      const aftnMatch = fullText.match(/\bWM[A-Z]{6}/);
+      const aftn = aftnMatch ? aftnMatch[0] : '';
+      if (!aftn) return;
+
+      const phoneMatch = fullText.match(/(?:Tel|Phone):\s*([+\d-\s()]{9,20})/i);
+      const phone = phoneMatch ? sanitizeText(phoneMatch[1]) : undefined;
+
+      const faxMatch = fullText.match(/Fax:\s*([+\d-\s()]{9,20})/i);
+      const fax = faxMatch ? sanitizeText(faxMatch[1]) : undefined;
+
+      if (!phone) return;
+
+      records.push(buildRecord({
+        id: `MY-${aftn}`,
+        firIcao: aftn.slice(0, 4),
+        firName: unitName.replace(/ACCTUNIT.*/ig, '').replace(/\bACC\b/ig, '').trim() + ' FIR',
+        regionCode: source.regionCode,
+        facilityName: unitName.split(';')[0].trim(),
+        facilityType: 'ACC',
+        phoneNumber: phone.replace(/\s+/g, ''),
+        faxNumber: fax ? fax.replace(/\s+/g, '') : undefined,
+        aftnAddress: aftn,
+        vhfFreq: [GUARD_FREQ],
+        sourceName: source.name,
+        sourceUrl: gen33Url
+      }));
+    });
+
+    return records;
+  } catch {
+    return [];
+  }
+}
+
+// ──────────────────────────────────────────────
 //  彙整
 // ──────────────────────────────────────────────
 
@@ -850,6 +924,7 @@ export async function getFirContactsPaginated(options: GetContactsOptions = {}):
     scrapeIndiaAai(),
     scrapeFranceSia(),
     scrapeSpainEnaire(),
+    scrapeMalaysiaCaam(),
   ]);
 
   const deduped = Array.from(
