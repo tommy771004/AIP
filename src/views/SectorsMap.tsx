@@ -1,134 +1,158 @@
-import React, { useEffect, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { GlassPanel } from '../components/StyledComponents';
-import { SectorStatus } from '../types';
-import { MOCK_SECTORS, FIR_UI_CONFIG } from '../data/firSource';
+import { REGION_LABELS, REGION_MAP_CONFIG } from '../data/firSource';
+import { buildRegionSummaries } from '../lib/firAnalytics';
+import { FirCluster } from '../types';
 
-export default function SectorsMap() {
-  const [activeRegion, setActiveRegion] = useState<string | null>(null);
-  const [sectors, setSectors] = useState<SectorStatus[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+interface SectorsMapProps {
+  firClusters: FirCluster[];
+  isLoading: boolean;
+}
 
-  useEffect(() => {
-    setLoading(true);
-    setTimeout(() => {
-      setSectors(MOCK_SECTORS);
-      setLastUpdated(new Date());
-      setLoading(false);
-    }, 400);
-  }, []);
+export default function SectorsMap({ firClusters, isLoading }: SectorsMapProps) {
+  const [selectedFir, setSelectedFir] = useState<string | null>(firClusters[0]?.firIcao ?? null);
 
-  const toggleRegion = (regionText: string) => {
-    setActiveRegion(activeRegion === regionText ? null : regionText);
-  };
+  const regionSummaries = useMemo(
+    () => buildRegionSummaries(firClusters.flatMap((cluster) => cluster.facilities)),
+    [firClusters]
+  );
+
+  const activeCluster = firClusters.find((cluster) => cluster.firIcao === selectedFir) ?? firClusters[0];
 
   return (
-    <div className="flex flex-col md:flex-row gap-6 pt-6 h-full pb-4">
-      {/* Context Panel */}
-      <aside className="w-full md:w-1/3 flex flex-col gap-6 z-10 shrink-0">
-        <GlassPanel className="!p-6 !rounded-xl relative">
-          <div className="flex justify-between items-start mb-2">
-            <h2 className="text-[20px] font-semibold text-primary">即時監控</h2>
-            {loading ? (
-               <span className="material-symbols-outlined text-sm animate-spin text-primary">sync</span>
-            ) : (
-               <div className="flex space-x-1 items-center">
-                 <span className="w-2 h-2 rounded-full bg-secondary pulse-glow"></span>
-               </div>
-            )}
+    <div className="grid gap-6 xl:grid-cols-[360px_1fr]">
+      <GlassPanel className="h-fit">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-[11px] uppercase tracking-[0.28em] text-primary/80">FIR 涵蓋</div>
+            <h2 className="mt-2 text-2xl font-bold tracking-[-0.04em] text-on-surface">區域控制矩陣</h2>
           </div>
-          <p className="text-[14px] font-medium text-on-surface-variant mb-4 flex flex-col gap-1">
-            <span>選擇飛航情報區 (FIR) 以檢視活動區域和目前的求救訊號。</span>
-            {lastUpdated && !loading && (
-              <span className="text-[11px] opacity-70">更新於: {lastUpdated.toLocaleTimeString()}</span>
-            )}
-          </p>
-          
-          <div className="relative mb-6">
-            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-              <span className="material-symbols-outlined text-outline">search</span>
-            </div>
-            <input 
-              type="text" 
-              className="w-full pl-10 pr-4 py-3 rounded-full bg-surface-container-low border-none shadow-[inset_4px_4px_8px_rgba(0,0,0,0.05),_inset_-4px_-4px_8px_rgba(255,255,255,0.8)] focus:ring-2 focus:ring-secondary/50 text-[14px] font-medium outline-none transition-shadow" 
-              placeholder="搜尋區域..." 
-            />
-          </div>
-
-          <div className="flex flex-col gap-3">
-            {sectors.map(sector => (
-              <button key={sector.id} className="rounded-3xl border-2 border-white/50 shadow-sm bg-surface flex items-center p-3 hover:bg-surface-container transition-colors active:scale-95" onClick={() => toggleRegion(sector.id)}>
-                <div className={`w-10 h-10 rounded-full ${sector.isEmergency ? 'bg-tertiary-container text-primary' : 'bg-surface-container-high text-tertiary'} flex items-center justify-center mr-3`}>
-                  <span className="material-symbols-outlined">{sector.isEmergency ? 'flight_takeoff' : 'radar'}</span>
-                </div>
-                <div className="text-left flex-grow">
-                  <div className="text-[20px] font-semibold text-on-surface">{sector.name}</div>
-                  <div className="text-[14px] font-medium text-on-surface-variant">{sector.statusText}</div>
-                </div>
-                {sector.isEmergency && <div className="w-3 h-3 rounded-full bg-secondary-container pulse-glow mr-2"></div>}
-              </button>
-            ))}
-            {loading && sectors.length === 0 && <div className="text-[14px] text-on-surface-variant text-center py-4">資料同步中...</div>}
-          </div>
-        </GlassPanel>
-
-        <div className="mt-auto pt-6 hidden md:block">
-          <button className="w-full bg-secondary text-on-secondary rounded-xl py-4 px-6 text-[20px] font-semibold shadow-[0_8px_20px_rgba(172,53,9,0.3)] hover:translate-y-[-2px] active:translate-y-[2px] active:shadow-none transition-all flex items-center justify-center gap-2">
-            <span className="material-symbols-outlined">emergency_share</span>
-            宣告全球緊急情況
-          </button>
+          {isLoading && <span className="material-symbols-outlined animate-spin text-primary">progress_activity</span>}
         </div>
-      </aside>
 
-      {/* Map Area */}
-      <section className="w-full h-[512px] md:h-auto min-h-[400px] relative rounded-3xl border-2 border-white/50 shadow-sm bg-primary-container/20 overflow-hidden flex items-center justify-center self-stretch flex-grow">
-        <div className="absolute inset-0 opacity-30 pointer-events-none" style={{ backgroundImage: "radial-gradient(#bbc8d0 1px, transparent 1px)", backgroundSize: "20px 20px" }}></div>
-        
-        <div className="relative w-full h-full max-w-2xl max-h-[600px]">
-          {/* Connection Lines */}
-          <svg className="absolute inset-0 w-full h-full pointer-events-none z-0" style={{ strokeDasharray: "4 4" }}>
-            <path d="M 45% 30% Q 55% 22% 65% 15%" fill="none" stroke="#bbc8d0" strokeWidth="2"></path>
-            <path d="M 45% 30% Q 42% 45% 40% 60%" fill="none" stroke="#bbc8d0" strokeWidth="2"></path>
-          </svg>
-
-          {sectors.map((sector) => {
-            const uiConfig = FIR_UI_CONFIG[sector.id] || FIR_UI_CONFIG['taipei'];
-
+        <div className="mt-6 space-y-3">
+          {firClusters.map((cluster) => {
+            const isActive = cluster.firIcao === activeCluster?.firIcao;
             return (
-              <div key={`map-${sector.id}`} className="absolute group cursor-pointer blob-anim" style={{ top: uiConfig.top, left: uiConfig.left }} onClick={() => toggleRegion(sector.id)}>
-                <div className={`${uiConfig.shape} ${uiConfig.color} shadow-lg flex flex-col items-center justify-center transition-all duration-500 hover:scale-110 z-20 relative ${activeRegion === sector.id ? uiConfig.align : 'z-10'}`}>
-                  <span className={`text-[20px] font-bold z-10 relative`}>{uiConfig.shortName}</span>
-                  {sector.isEmergency && (
-                    <div className="absolute -top-2 -right-2 w-6 h-6 bg-secondary rounded-full border-2 border-surface flex items-center justify-center pulse-glow z-20">
-                      <span className="material-symbols-outlined text-[12px] text-on-secondary" style={{fontVariationSettings: "'FILL' 1"}}>warning</span>
-                    </div>
-                  )}
+              <button
+                key={cluster.firIcao}
+                onClick={() => setSelectedFir(cluster.firIcao)}
+                className={`w-full rounded-[22px] border px-4 py-4 text-left transition ${
+                  isActive
+                    ? 'border-primary/40 bg-primary/10'
+                    : 'border-white/10 bg-white/5 hover:bg-white/8'
+                }`}
+              >
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <div className="text-[11px] uppercase tracking-[0.24em] text-on-surface-variant">{cluster.firIcao}</div>
+                    <div className="mt-1 text-lg font-semibold text-on-surface">{cluster.firName}</div>
+                  </div>
+                  <div className={`h-3 w-3 rounded-full ${cluster.statusTone === 'hot' ? 'bg-secondary' : cluster.statusTone === 'watch' ? 'bg-amber-300' : 'bg-emerald-300'}`}></div>
                 </div>
-                <div className={`absolute top-full left-1/2 -translate-x-1/2 mt-4 w-48 glass-panel !p-3 rounded-xl transition-all duration-300 z-30 flex flex-col gap-1 ${activeRegion === sector.id ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4 pointer-events-none'}`}>
-                  <div className={`text-[12px] ${sector.isEmergency ? 'text-secondary' : 'text-tertiary'} font-bold uppercase tracking-wider`}>{sector.frequency}</div>
-                  <div className="text-[14px] font-medium text-on-surface">{sector.activeTracks > 0 ? `${sector.activeTracks} 個活動軌跡` : (sector.isEmergency ? '活動軌跡' : sector.statusText.split(' • ')[0])}</div>
-                  {sector.isEmergency && (
-                    <button className="mt-2 w-full bg-primary-container text-on-primary-container py-1 rounded-lg text-[14px] font-medium hover:bg-primary hover:text-on-primary transition-colors">鎖定區域</button>
-                  )}
+                <div className="mt-3 text-sm text-on-surface-variant">
+                  {cluster.facilityCount} 筆設施 · {cluster.frequencies.slice(0, 2).join(' / ')}
                 </div>
-              </div>
+              </button>
             );
           })}
         </div>
+      </GlassPanel>
 
-        {/* Floating Tools */}
-        <div className="absolute right-6 bottom-6 flex flex-col gap-3 z-20">
-          <button className="w-12 h-12 rounded-3xl squircle-shadow bg-surface flex items-center justify-center text-primary active:scale-95 transition-all">
-            <span className="material-symbols-outlined">add</span>
-          </button>
-          <button className="w-12 h-12 rounded-3xl squircle-shadow bg-surface flex items-center justify-center text-primary active:scale-95 transition-all">
-            <span className="material-symbols-outlined">remove</span>
-          </button>
-          <button className="w-12 h-12 rounded-3xl squircle-shadow bg-surface flex items-center justify-center text-primary active:scale-95 transition-all mt-3">
-            <span className="material-symbols-outlined">my_location</span>
-          </button>
+      <GlassPanel className="overflow-hidden">
+        <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <div className="text-[11px] uppercase tracking-[0.28em] text-primary/80">訊號地圖</div>
+            <h2 className="mt-2 text-3xl font-bold tracking-[-0.05em] text-on-surface">全球中繼抽象視圖</h2>
+          </div>
+          {activeCluster && (
+            <div className="rounded-full border border-white/10 bg-white/5 px-5 py-3 text-sm text-on-surface-variant">
+              目前焦點：<span className="font-semibold text-on-surface">{activeCluster.firName}</span>
+            </div>
+          )}
         </div>
-      </section>
+
+        <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
+          <div className="relative min-h-[520px] overflow-hidden rounded-[28px] border border-white/10 bg-[linear-gradient(180deg,rgba(11,23,39,0.9),rgba(7,17,31,0.96))]">
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(125,211,252,0.12),transparent_24%),radial-gradient(circle_at_70%_70%,rgba(249,115,22,0.12),transparent_22%)]"></div>
+            <div className="absolute inset-0 opacity-25" style={{ backgroundImage: 'linear-gradient(rgba(255,255,255,0.08) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.08) 1px, transparent 1px)', backgroundSize: '48px 48px' }}></div>
+
+            {regionSummaries.map((summary) => {
+              const config = REGION_MAP_CONFIG[summary.regionCode] ?? REGION_MAP_CONFIG.TW;
+              const relatedClusters = firClusters.filter((cluster) => cluster.regionCode === summary.regionCode);
+              const active = relatedClusters.some((cluster) => cluster.firIcao === activeCluster?.firIcao);
+
+              return (
+                <button
+                  key={summary.regionCode}
+                  onClick={() => setSelectedFir(relatedClusters[0]?.firIcao ?? null)}
+                  className="absolute text-left transition hover:scale-105"
+                  style={{ top: config.top, left: config.left }}
+                >
+                  <div className={`absolute -inset-6 rounded-full blur-2xl ${config.haloClass} ${active ? 'opacity-100' : 'opacity-60'}`}></div>
+                  <div className={`relative min-w-[148px] rounded-[26px] border border-white/10 bg-gradient-to-br ${config.accentClass} p-[1px] shadow-[0_18px_50px_rgba(0,0,0,0.3)]`}>
+                    <div className={`rounded-[25px] bg-slate-950/85 px-5 py-4 ${active ? 'ring-1 ring-white/25' : ''}`}>
+                      <div className="text-[11px] uppercase tracking-[0.26em] text-white/60">{REGION_LABELS[summary.regionCode] ?? summary.regionCode}</div>
+                      <div className="mt-1 text-lg font-semibold text-white">{config.shortName}</div>
+                      <div className="mt-3 flex items-center justify-between text-xs text-white/70">
+                        <span>{summary.facilityCount} 筆設施</span>
+                        <span>{summary.liveCount} 筆即時</span>
+                      </div>
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+
+            <svg className="pointer-events-none absolute inset-0 h-full w-full opacity-45">
+              <path d="M180 210 C300 120 580 120 720 220" stroke="rgba(125,211,252,0.5)" strokeWidth="1.5" fill="none" strokeDasharray="6 8" />
+              <path d="M140 310 C260 360 450 360 660 280" stroke="rgba(249,115,22,0.45)" strokeWidth="1.5" fill="none" strokeDasharray="6 8" />
+              <path d="M680 240 C710 320 650 390 560 420" stroke="rgba(74,222,128,0.4)" strokeWidth="1.5" fill="none" strokeDasharray="6 8" />
+            </svg>
+          </div>
+
+          {activeCluster && (
+            <div className="space-y-4">
+              <div className="rounded-[24px] border border-white/10 bg-white/5 p-5">
+                <div className="text-[11px] uppercase tracking-[0.26em] text-primary/80">{activeCluster.firIcao}</div>
+                <div className="mt-2 text-2xl font-bold tracking-[-0.04em] text-on-surface">{activeCluster.firName}</div>
+                <div className="mt-2 text-sm text-on-surface-variant">{activeCluster.readinessLabel}</div>
+              </div>
+
+              <div className="rounded-[24px] border border-white/10 bg-white/5 p-5">
+                <div className="text-[11px] uppercase tracking-[0.26em] text-on-surface-variant">頻率</div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {activeCluster.frequencies.map((frequency) => (
+                    <span key={frequency} className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-on-surface">
+                      {frequency}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              <div className="rounded-[24px] border border-white/10 bg-white/5 p-5">
+                <div className="text-[11px] uppercase tracking-[0.26em] text-on-surface-variant">設施</div>
+                <div className="mt-4 space-y-3">
+                  {activeCluster.facilities.map((facility) => (
+                    <div key={facility.id} className="rounded-[18px] border border-white/10 bg-slate-950/40 p-4">
+                      <div className="flex items-center justify-between gap-4">
+                        <div>
+                          <div className="text-sm font-semibold text-on-surface">{facility.facilityName}</div>
+                          <div className="mt-1 text-xs uppercase tracking-[0.2em] text-on-surface-variant">{facility.facilityType}</div>
+                        </div>
+                        <div className="text-right text-xs text-on-surface-variant">
+                          <div>{facility.aftnAddress}</div>
+                          <div className="mt-1 text-on-surface">{facility.phoneNumber}</div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </GlassPanel>
     </div>
   );
 }

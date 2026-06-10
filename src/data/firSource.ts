@@ -1,95 +1,127 @@
-import { FIRData, SectorStatus, DashboardData, ActiveIncident, MapUIPosition } from '../types';
+import { ActiveIncident, FacilityType, RegionMapConfig } from '../types';
 
-export const firDataList: FIRData[] = [
-  {
-    regionCode: 'taipei',
-    centerName: '台北飛航情報區',
-    tel: '+886 2 2514 1234',
-    fax: '+886 2 2514 5678',
-    aftn: 'RCTPZQZX',
-    lastUpdated: new Date().toISOString()
-  },
-  {
-    regionCode: 'fukuoka',
-    centerName: '福岡飛航情報區',
-    tel: '+81 92 123 4567',
-    fax: '+81 92 123 4568',
-    aftn: 'RJDCHQXO',
-    lastUpdated: new Date().toISOString()
-  },
-  {
-    regionCode: 'manila',
-    centerName: '馬尼拉飛航情報區',
-    tel: '+63 2 8123 4567',
-    fax: '+63 2 8123 4568',
-    aftn: 'RPHIYNYX',
-    lastUpdated: new Date().toISOString()
-  }
-];
-
-export const getFirDataByCode = (code: string) => firDataList.find(f => f.regionCode === code);
-
-export const FIR_UI_CONFIG: Record<string, MapUIPosition> = {
-  taipei: {
-    top: '30%', left: '45%', align: 'scale-120 z-40',
-    color: 'bg-primary text-on-primary',
-    shape: 'rounded-[40%_60%_70%_30%/40%_50%_60%_50%] w-32 h-24',
-    shortName: '台北'
-  },
-  fukuoka: {
-    top: '15%', left: '65%', align: 'scale-120 z-40',
-    color: 'bg-surface-variant text-on-surface-variant',
-    shape: 'rounded-[50%_50%_30%_70%/60%_40%_60%_40%] w-28 h-28 border-2 border-white/50',
-    shortName: '福岡'
-  },
-  manila: {
-    top: '60%', left: '40%', align: 'scale-120 z-40',
-    color: 'bg-tertiary-container text-on-tertiary-container',
-    shape: 'rounded-[60%_40%_50%_50%/40%_60%_40%_60%] w-36 h-28 border-2 border-white/50',
-    shortName: '馬尼拉'
-  }
+export const REGION_LABELS: Record<string, string> = {
+  TW: '台灣',
+  JP: '日本',
+  AU: '澳洲',
+  UK: '英國',
+  US: '美國',
+  SG: '新加坡',
+  HK: '香港',
+  CA: '加拿大',
+  BR: '巴西',
+  EU: '歐洲',
 };
 
-export const MOCK_SECTORS: SectorStatus[] = [
-  {
-    id: 'taipei',
-    name: '台北飛航情報區',
-    statusText: '活動中 • 3 個區域',
-    isEmergency: true,
-    activeTracks: 3,
-    frequency: 'VHF 121.5 MHz'
-  },
-  {
-    id: 'fukuoka',
-    name: '福岡飛航情報區',
-    statusText: '待命 • 0 個警報',
-    isEmergency: false,
-    activeTracks: 0,
-    frequency: '無異常'
-  },
-  {
-    id: 'manila',
-    name: '馬尼拉飛航情報區',
-    statusText: '監控中 • 1 個建議',
-    isEmergency: false,
-    activeTracks: 1,
-    frequency: '注意'
-  }
-];
-
-export const MOCK_DASHBOARD: DashboardData = {
-  currentSectorName: '台北飛航情報區',
-  connectionStatus: '安全連線',
-  monitoringStatus: '全面監控中'
+export const REGION_FLAGS: Record<string, string> = {
+  TW: 'TW',
+  JP: 'JP',
+  AU: 'AU',
+  UK: 'UK',
+  US: 'US',
+  SG: 'SG',
+  HK: 'HK',
+  CA: 'CA',
+  BR: 'BR',
+  EU: 'EU',
 };
+
+export const REGION_MAP_CONFIG: Record<string, RegionMapConfig> = {
+  TW: {
+    top: '28%',
+    left: '55%',
+    shortName: 'Taipei',
+    accentClass: 'from-sky-300 via-cyan-300 to-teal-200',
+    haloClass: 'bg-cyan-400/30',
+  },
+  JP: {
+    top: '20%',
+    left: '68%',
+    shortName: 'Japan',
+    accentClass: 'from-amber-200 via-orange-300 to-rose-300',
+    haloClass: 'bg-orange-400/25',
+  },
+  AU: {
+    top: '64%',
+    left: '66%',
+    shortName: 'Australia',
+    accentClass: 'from-emerald-200 via-teal-300 to-cyan-300',
+    haloClass: 'bg-emerald-400/25',
+  },
+  UK: {
+    top: '24%',
+    left: '24%',
+    shortName: 'London',
+    accentClass: 'from-violet-200 via-fuchsia-200 to-pink-300',
+    haloClass: 'bg-fuchsia-400/25',
+  },
+  US: {
+    top: '42%',
+    left: '10%',
+    shortName: 'FAA',
+    accentClass: 'from-lime-200 via-emerald-300 to-teal-300',
+    haloClass: 'bg-lime-400/20',
+  },
+  SG: {
+    top: '46%',
+    left: '61%',
+    shortName: '新加坡',
+    accentClass: 'from-cyan-200 via-sky-300 to-blue-300',
+    haloClass: 'bg-sky-400/25',
+  },
+  HK: {
+    top: '34%',
+    left: '58%',
+    shortName: '香港',
+    accentClass: 'from-rose-200 via-orange-300 to-amber-300',
+    haloClass: 'bg-rose-400/25',
+  },
+  CA: {
+    top: '18%',
+    left: '8%',
+    shortName: '加拿大',
+    accentClass: 'from-indigo-200 via-sky-200 to-cyan-200',
+    haloClass: 'bg-indigo-400/25',
+  },
+  BR: {
+    top: '68%',
+    left: '26%',
+    shortName: '巴西',
+    accentClass: 'from-emerald-200 via-lime-300 to-amber-300',
+    haloClass: 'bg-emerald-400/25',
+  },
+  EU: {
+    top: '18%',
+    left: '31%',
+    shortName: '歐洲',
+    accentClass: 'from-fuchsia-200 via-violet-200 to-indigo-300',
+    haloClass: 'bg-violet-400/25',
+  },
+};
+
+export const FACILITY_TYPE_LABELS: Record<FacilityType, string> = {
+  ACC: '區域管制中心',
+  ARTCC: '航路交通管制中心',
+  APP: '進場管制',
+  FIC: '飛航情報中心',
+  RCC: '搜救協調中心',
+  MED: '醫療協調',
+  AFIS: '飛航情報服務',
+  TWR: '塔台',
+  'TWR/APP': '塔台／進場',
+};
+
+export const SOURCE_STATUS_LABELS = {
+  live: '即時',
+  cache: '快取',
+} as const;
 
 export const MOCK_INCIDENT: ActiveIncident = {
-    id: 'INC-2026-0610',
-    etaMinutes: 4,
-    operator: {
-      id: 'OP-001',
-      name: 'Sarah J.',
-      role: '飛航情報區協調員',
-      avatarUrl: 'https://lh3.googleusercontent.com/aida-public/AB6AXuAKGLI-xTR7-0uldhivkkxbAXGYfP_OSMPt7bKKsvLBv_1Qs8AtgNLqFnIN4uh0H_ksHmlAdOKIPPqMtC9xXytB6puaAgQogFt3RqJJieImreJ32TlVSFMdzpInYlf1XYiUqOPNSrUtnLNVqnZal9G28pcSRSKKXs7v9KsIY4xpGOybkb4I1zo9eH6_wi4hzN7FGlQSAsg6FCYq4c5P0A-QVq0yzKpJ57OiFTO0Je5x_fU5zPqirN78Yo0jeac88RTpe9FEMOh1fIpO'
-    }
+  id: 'INC-2026-0610',
+  etaMinutes: 4,
+  operator: {
+    id: 'OP-001',
+    name: '林怡君',
+    role: '飛航情報協調席主管',
+  },
 };

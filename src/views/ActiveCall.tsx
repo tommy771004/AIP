@@ -1,102 +1,99 @@
-import React, { useEffect, useState } from 'react';
-import { ActiveIncident } from '../types';
+import React, { useEffect, useMemo, useState } from 'react';
 import { MOCK_INCIDENT } from '../data/firSource';
+import { FirCluster } from '../types';
 
 interface ActiveCallProps {
   onEndCall: () => void;
+  firClusters: FirCluster[];
 }
 
-export default function ActiveCall({ onEndCall }: ActiveCallProps) {
-  const [incident, setIncident] = useState<ActiveIncident | null>(null);
+function formatDuration(seconds: number) {
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+}
+
+export default function ActiveCall({ onEndCall, firClusters }: ActiveCallProps) {
   const [duration, setDuration] = useState(0);
+  const activeCluster = useMemo(() => firClusters[0], [firClusters]);
 
   useEffect(() => {
-    // Simulate async data
-    setTimeout(() => setIncident(MOCK_INCIDENT), 500);
-  }, []);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setDuration(d => d + 1);
-    }, 1000);
+    const interval = setInterval(() => setDuration((current) => current + 1), 1000);
     return () => clearInterval(interval);
   }, []);
 
-  const formatDuration = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-  };
-
   return (
-    <div className="absolute inset-0 z-50 bg-background text-on-background h-screen w-full flex flex-col items-center justify-between py-12 px-4 md:px-12 selection:bg-secondary-container selection:text-on-secondary-container">
-      
-      {/* Status Header */}
-      <header className="w-full max-w-md mx-auto text-center z-10 glass-panel rounded-xl p-6 mt-10 shadow-[0_8px_32px_0_rgba(31,38,135,0.05)]">
-        <div className="inline-flex items-center justify-center space-x-2 bg-secondary-container/20 text-on-secondary-container px-4 py-2 rounded-full mb-6 animate-bounce-subtle">
-          <span className="w-3 h-3 bg-secondary rounded-full animate-pulse"></span>
-          <span className="text-[12px] font-bold tracking-wider uppercase">即時追蹤</span>
-        </div>
-        <h1 className="text-[24px] md:text-[48px] font-bold text-primary mb-1 leading-tight tracking-tight">救援單位已派遣</h1>
-        <p className="text-[18px] font-medium text-tertiary">
-          預計抵達時間：{incident ? `${incident.etaMinutes} 分鐘` : '計算中...'}
-        </p>
-      </header>
-
-      {/* Central Animation / Voice Activity */}
-      <div className="relative flex-1 flex items-center justify-center w-full max-w-md mx-auto z-0 my-8">
-        <div className="relative w-64 h-64 flex items-center justify-center">
-          <div className="pulse-wave w-full h-full"></div>
-          <div className="pulse-wave pulse-wave-2 w-5/6 h-5/6"></div>
-          <div className="pulse-wave pulse-wave-3 w-4/6 h-4/6"></div>
-          
-          <div className="relative z-10 w-32 h-32 bg-surface rounded-[40px] shadow-[inset_2px_2px_4px_rgba(255,255,255,0.8),_-4px_-4px_10px_rgba(255,255,255,0.9),_4px_4px_10px_rgba(0,0,0,0.1)] flex items-center justify-center">
-            <span className="material-symbols-outlined text-secondary" style={{fontSize: '48px', fontVariationSettings: "'FILL' 1"}}>
-              support_agent
-            </span>
-          </div>
-        </div>
-      </div>
-
-      <div className="w-full flex justify-center flex-col gap-6 relative z-10 max-w-md pb-8">
-        {/* Operator Details Card */}
-        <div className="w-full glass-panel rounded-[32px] p-6 shadow-[0_8px_32px_0_rgba(31,38,135,0.05)] border border-white/40 flex items-center justify-between">
-          <div className="flex items-center space-x-6">
-            <div className="w-16 h-16 rounded-full bg-surface-container-high flex items-center justify-center shadow-inner overflow-hidden relative">
-              {incident ? (
-                <img src={incident.operator.avatarUrl} alt={`${incident.operator.name} Avatar`} className="w-full h-full object-cover" />
-              ) : (
-                <span className="material-symbols-outlined">person</span>
-              )}
-              <div className="absolute bottom-1 right-1 w-3 h-3 bg-green-500 rounded-full border-2 border-surface"></div>
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[radial-gradient(circle_at_top,rgba(249,115,22,0.18),transparent_24%),radial-gradient(circle_at_bottom,rgba(125,211,252,0.18),transparent_24%),#050b15] px-4 py-10 text-on-surface">
+      <div className="absolute inset-0 opacity-20" style={{ backgroundImage: 'linear-gradient(rgba(255,255,255,0.08) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.08) 1px, transparent 1px)', backgroundSize: '42px 42px' }}></div>
+      <div className="relative z-10 w-full max-w-5xl rounded-[36px] border border-white/10 bg-slate-950/70 p-6 shadow-[0_28px_100px_rgba(0,0,0,0.45)] backdrop-blur-2xl md:p-10">
+        <div className="grid gap-8 lg:grid-cols-[1.1fr_0.9fr]">
+          <div>
+            <div className="inline-flex items-center gap-3 rounded-full border border-secondary/30 bg-secondary/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.28em] text-secondary">
+              <span className="h-2 w-2 rounded-full bg-secondary animate-pulse"></span>
+              緊急轉接進行中
             </div>
-            <div>
-              <h3 className="text-[20px] font-semibold text-on-surface">
-                {incident ? incident.operator.name : '連線中...'}
-              </h3>
-              <p className="text-[14px] font-medium text-tertiary">
-                {incident ? incident.operator.role : ''}
-              </p>
+            <h1 className="mt-6 text-4xl font-bold tracking-[-0.06em] text-white md:text-6xl">
+              救援通道已接通，正在追蹤目前選定的 FIR。
+            </h1>
+            <p className="mt-4 max-w-2xl text-base leading-7 text-slate-300">
+              值席人員已確認語音鏈路、主要 AFTN 轉送路徑與緊急頻率。請保持通話，直到任務交接完成。
+            </p>
+
+            <div className="mt-8 grid gap-4 sm:grid-cols-3">
+              <div className="rounded-[24px] border border-white/10 bg-white/5 p-5">
+                <div className="text-[10px] uppercase tracking-[0.24em] text-slate-400">計時</div>
+                <div className="mt-2 text-3xl font-bold tracking-[-0.05em] text-white">{formatDuration(duration)}</div>
+              </div>
+              <div className="rounded-[24px] border border-white/10 bg-white/5 p-5">
+                <div className="text-[10px] uppercase tracking-[0.24em] text-slate-400">預估抵達</div>
+                <div className="mt-2 text-3xl font-bold tracking-[-0.05em] text-white">{MOCK_INCIDENT.etaMinutes} 分鐘</div>
+              </div>
+              <div className="rounded-[24px] border border-white/10 bg-white/5 p-5">
+                <div className="text-[10px] uppercase tracking-[0.24em] text-slate-400">FIR</div>
+                <div className="mt-2 text-3xl font-bold tracking-[-0.05em] text-white">{activeCluster?.firIcao ?? '待定'}</div>
+              </div>
             </div>
           </div>
-          <div className="flex flex-col items-end">
-            <span className="text-[18px] text-on-surface font-bold">{formatDuration(duration)}</span>
-            <span className="text-[12px] font-bold tracking-wider uppercase text-outline">通話時間</span>
-          </div>
-        </div>
 
-        {/* Action Area: Big End Call Button */}
-        <div className="w-full cursor-pointer">
-          <button 
-            onClick={onEndCall}
-            className="w-full aspect-[4/1] bg-error text-on-error rounded-[40px] shadow-[inset_0px_2px_4px_rgba(255,255,255,0.3),_0px_10px_20px_rgba(186,26,26,0.3)] flex items-center justify-center space-x-6 transition-all duration-200 active:scale-95 active:shadow-[inset_0px_6px_12px_rgba(0,0,0,0.2)] hover:bg-on-error-container hover:text-white"
-          >
-            <span className="material-symbols-outlined" style={{fontSize: '32px', fontVariationSettings: "'FILL' 1"}}>
-                call_end
-            </span>
-            <span className="text-[24px] font-bold tracking-wide">結束通話</span>
-          </button>
-          <p className="text-center text-[14px] font-medium text-outline mt-3">僅在操作員指示下結束</p>
+          <div className="space-y-4">
+            <div className="rounded-[28px] border border-white/10 bg-white/5 p-6">
+              <div className="flex items-center gap-4">
+                <div className="flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-primary to-secondary text-lg font-bold text-slate-950">
+                  {MOCK_INCIDENT.operator.name.split(' ').map((part) => part[0]).join('').slice(0, 2)}
+                </div>
+                <div>
+                  <div className="text-xl font-semibold text-white">{MOCK_INCIDENT.operator.name}</div>
+                  <div className="mt-1 text-sm text-slate-300">{MOCK_INCIDENT.operator.role}</div>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-[28px] border border-white/10 bg-white/5 p-6">
+              <div className="text-[10px] uppercase tracking-[0.24em] text-slate-400">目前轉接內容</div>
+              <div className="mt-4 space-y-3 text-sm text-slate-300">
+                <div className="flex items-center justify-between gap-3">
+                  <span>設施</span>
+                  <span className="font-semibold text-white">{activeCluster?.facilities[0]?.facilityName ?? '等待中'}</span>
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <span>電話</span>
+                  <span className="font-semibold text-white">{activeCluster?.facilities[0]?.phoneNumber ?? '等待中'}</span>
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <span>AFTN</span>
+                  <span className="font-semibold text-white">{activeCluster?.aftnAddresses[0] ?? '等待中'}</span>
+                </div>
+              </div>
+            </div>
+
+            <button
+              onClick={onEndCall}
+              className="flex w-full items-center justify-center gap-3 rounded-[28px] bg-secondary px-6 py-5 text-base font-bold uppercase tracking-[0.24em] text-on-secondary shadow-[0_18px_54px_rgba(249,115,22,0.35)] transition hover:-translate-y-0.5"
+            >
+              <span className="material-symbols-outlined">call_end</span>
+              結束轉接
+            </button>
+          </div>
         </div>
       </div>
     </div>

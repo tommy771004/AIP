@@ -3,7 +3,6 @@ import path from "path";
 import cors from "cors";
 import { createServer as createViteServer } from "vite";
 import {
-  getFirContacts,
   getFirContactsPaginated,
   validateAllSources,
   SCRAPER_SOURCES,
@@ -43,7 +42,7 @@ async function startServer() {
       );
 
       const result = await getFirContactsPaginated({ regionCode, page, pageSize });
-      res.json({ success: true, ...result });
+      res.json({ success: true, data: result });
     } catch (error: any) {
       console.error("Scraper Error:", error);
       res.status(500).json({ success: false, error: error.message });
@@ -58,7 +57,7 @@ async function startServer() {
     const regions = Object.entries(SCRAPER_SOURCES).map(([key, s]) => ({
       key,
       regionCode: s.regionCode,
-      region: s.region,
+      region: s.firName,
       sourceName: s.name,
       sourceUrl: s.url,
     }));

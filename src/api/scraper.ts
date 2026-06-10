@@ -1,99 +1,243 @@
 import axios from 'axios';
 import * as cheerio from 'cheerio';
+import type {
+  FacilityType,
+  FirContactRecord,
+  PaginatedContacts,
+  RegionInfo,
+  SourceValidation,
+} from '../types';
 
-// ─────────────────────────────────────────
-//  Types
-// ─────────────────────────────────────────
-
-export interface FirContact {
-  id: string;
-  region: string;
-  regionCode: string;
-  facilityName: string;
-  type: 'ACC' | 'TWR' | 'RCC' | 'MED' | 'APP' | 'FIC';
-  frequencies: string[];
-  telephone: string;
-  telefax?: string;
-  aftn: string;
-  source: string;
-  sourceUrl: string;
-  sourceVerified: boolean;
-  airacDate?: string;
-}
-
-export interface RegionInfo {
-  code: string;
-  name: string;
-  count: number;
-}
-
-export interface PaginatedContacts {
-  data: FirContact[];
-  total: number;
-  page: number;
-  pageSize: number;
-  totalPages: number;
-  availableRegions: RegionInfo[];
-}
-
-export interface SourceValidation {
+interface ScraperSourceDefinition {
   name: string;
   url: string;
-  isAccessible: boolean;
-  statusCode?: number;
-  error?: string;
-  checkedAt: string;
+  fallbackGen33Url: string;
+  regionCode: string;
+  firName: string;
+  firIcao: string;
 }
 
-// Known source definitions
-export const SCRAPER_SOURCES = {
+interface ContactSeed {
+  id: string;
+  firIcao: string;
+  firName: string;
+  regionCode: string;
+  facilityName: string;
+  facilityType: FacilityType;
+  phoneNumber: string;
+  faxNumber?: string;
+  aftnAddress: string;
+  vhfFreq: string[];
+  sourceName: string;
+  sourceUrl: string;
+  sourceVerified: boolean;
+}
+
+export const SCRAPER_SOURCES: Record<string, ScraperSourceDefinition> = {
   TAIWAN: {
-    name: 'Taiwan ANWS eAIP (交通部民航局飛航服務總台)',
+    name: '台灣民航局飛航服務總台 eAIP',
     url: 'https://eaip.caa.gov.tw/',
-    gen33: 'https://eaip.caa.gov.tw/eAIP/ROC-GEN-3.3-en-ROC.html',
+    fallbackGen33Url: 'https://eaip.caa.gov.tw/',
     regionCode: 'TW',
-    region: 'Taipei FIR',
+    firName: 'Taipei FIR',
+    firIcao: 'RCTP',
   },
   JAPAN: {
-    name: 'Japan JCAB AIS Japan',
+    name: '日本 AIS Japan',
     url: 'https://aisjapan.mlit.go.jp/',
-    gen33: 'https://aisjapan.mlit.go.jp/Login.do',
+    fallbackGen33Url: 'https://aisjapan.mlit.go.jp/',
     regionCode: 'JP',
-    region: 'Fukuoka FIR',
+    firName: 'Fukuoka FIR',
+    firIcao: 'RJJJ',
   },
   AUSTRALIA: {
-    name: 'Airservices Australia AIP',
-    url: 'https://www.airservicesaustralia.com/aip/current/',
-    gen33: 'https://www.airservicesaustralia.com/aip/current/html/AIP/MS-GEN-3.3-en-AU.html',
+    name: '澳洲 Airservices AIP',
+    url: 'https://www.airservicesaustralia.com/aip/aip.asp',
+    fallbackGen33Url: 'https://www.airservicesaustralia.com/aip/current/html/AIP/MS-GEN-3.3-en-AU.html',
     regionCode: 'AU',
-    region: 'Melbourne FIR',
+    firName: 'Melbourne FIR',
+    firIcao: 'YMMM',
   },
   UK: {
-    name: 'NATS UK eAIP',
-    url: 'https://nats-uk.ead-it.com/cms-nats/opencms/en/Publications/AIP',
-    gen33: 'https://www.aurora.nats.co.uk/htmlAIP/Publications/{DATE}-AIRAC/html/eAIP/EG-GEN-3.3-en-GB.html',
+    name: '英國 NATS eAIP',
+    url: 'https://nats-uk.ead-it.com/cms-nats/opencms/en/Publications/AIP/',
+    fallbackGen33Url: 'https://www.aurora.nats.co.uk/',
     regionCode: 'UK',
-    region: 'London FIR',
+    firName: 'London FIR',
+    firIcao: 'EGTT',
+  },
+  SINGAPORE: {
+    name: '新加坡 CAAS eAIP',
+    url: 'https://aip.caas.gov.sg/',
+    fallbackGen33Url: 'https://aip.caas.gov.sg/aip/eAIP/',
+    regionCode: 'SG',
+    firName: 'Singapore FIR',
+    firIcao: 'WSSS',
+  },
+  HONG_KONG: {
+    name: '香港 CAD AIS',
+    url: 'https://www.ais.gov.hk/',
+    fallbackGen33Url: 'https://www.ais.gov.hk/',
+    regionCode: 'HK',
+    firName: 'Hong Kong FIR',
+    firIcao: 'VHHK',
+  },
+  CANADA: {
+    name: '加拿大 Nav Canada AIP',
+    url: 'https://www.navcanada.ca/en/aeronautical-information/aip-canada.aspx',
+    fallbackGen33Url: 'https://www.navcanada.ca/en/aeronautical-information/aip-canada.aspx',
+    regionCode: 'CA',
+    firName: 'Vancouver FIR',
+    firIcao: 'CZVR',
+  },
+  BRAZIL: {
+    name: '巴西 DECEA AISWEB',
+    url: 'https://aisweb.decea.mil.br/',
+    fallbackGen33Url: 'https://aisweb.decea.mil.br/',
+    regionCode: 'BR',
+    firName: 'Brasilia FIR',
+    firIcao: 'SBBR',
+  },
+  EUROCONTROL: {
+    name: '歐洲 Eurocontrol EAD Basic',
+    url: 'https://www.ead.eurocontrol.int/',
+    fallbackGen33Url: 'https://www.ead.eurocontrol.int/',
+    regionCode: 'EU',
+    firName: 'Europe Aggregated FIRs',
+    firIcao: 'LFFF',
   },
   USA_FAA: {
-    name: 'FAA NASR Subscription',
-    url: 'https://nasr.faa.gov/',
-    gen33: 'https://www.faa.gov/air_traffic/flight_info/aeronav/aero_data/NASR_Subscription/',
+    name: '美國 FAA NASR 訂閱資料',
+    url: 'https://www.faa.gov/air_traffic/flight_info/aeronav/aero_data/',
+    fallbackGen33Url: 'https://www.faa.gov/air_traffic/flight_info/aeronav/aero_data/',
     regionCode: 'US',
-    region: 'Oakland ARTCC',
+    firName: 'Oakland ARTCC',
+    firIcao: 'KZOA',
   },
   SKYVECTOR: {
-    name: 'SkyVector Aviation Database',
+    name: 'SkyVector 航空資料庫',
     url: 'https://skyvector.com/',
-    gen33: 'https://skyvector.com/airport/RCTP/Taiwan-Taoyuan-International-Airport',
+    fallbackGen33Url: 'https://skyvector.com/airport/RCTP/Taiwan-Taoyuan-International-Airport',
     regionCode: 'TW',
-    region: 'Taipei FIR',
+    firName: 'Taipei FIR',
+    firIcao: 'RCTP',
   },
-} as const;
+};
 
-// ─────────────────────────────────────────
-//  AIRAC cycle helper
-// ─────────────────────────────────────────
+function buildRecord(seed: ContactSeed): FirContactRecord {
+  return {
+    ...seed,
+    airacCycle: getCurrentAiracDate(),
+    sourceStatus: seed.sourceVerified ? 'live' : 'cache',
+    lastValidatedAt: new Date().toISOString(),
+  };
+}
+
+function toAbsoluteUrl(baseUrl: string, href?: string) {
+  if (!href) return '';
+  try {
+    return new URL(href, baseUrl).toString();
+  } catch {
+    return href;
+  }
+}
+
+function sanitizeText(value: string) {
+  return value.replace(/\s+/g, ' ').trim();
+}
+
+function findFirstLink(
+  html: string,
+  baseUrl: string,
+  matcher: (href: string, text: string) => boolean
+) {
+  const $ = cheerio.load(html);
+  let selected = '';
+
+  $('a').each((_, element) => {
+    if (selected) return;
+    const href = $(
+      element
+    ).attr('href') ?? '';
+    const text = sanitizeText($(element).text());
+
+    if (matcher(href, text)) {
+      selected = toAbsoluteUrl(baseUrl, href);
+    }
+  });
+
+  return selected;
+}
+
+async function fetchPage(url: string) {
+  return axios.get(url, {
+    timeout: 10000,
+    headers: { 'User-Agent': 'Mozilla/5.0 (AIP Ops Bot)' },
+    validateStatus: (status) => status < 500,
+  });
+}
+
+async function resolveTaiwanGen33Url() {
+  const source = SCRAPER_SOURCES.TAIWAN;
+  const landing = await fetchPage(source.url);
+  const currentAiracUrl =
+    findFirstLink(
+      landing.data,
+      source.url,
+      (href, text) =>
+        /current/i.test(text) ||
+        /eaip/i.test(text) ||
+        /airac/i.test(text) ||
+        /index/i.test(href)
+    ) || source.fallbackGen33Url;
+
+  if (/GEN-?3\.3/i.test(currentAiracUrl)) {
+    return { url: currentAiracUrl, sourceVerified: landing.status < 400 };
+  }
+
+  const currentAiracPage = await fetchPage(currentAiracUrl);
+  const gen33Url =
+    findFirstLink(
+      currentAiracPage.data,
+      currentAiracUrl,
+      (href, text) => /GEN[\s-]*3\.3/i.test(text) || /GEN-?3\.3/i.test(href)
+    ) || source.fallbackGen33Url;
+
+  return {
+    url: gen33Url,
+    sourceVerified: landing.status < 400 && currentAiracPage.status < 400,
+  };
+}
+
+async function resolveAustraliaGen33Url() {
+  const source = SCRAPER_SOURCES.AUSTRALIA;
+  const landing = await fetchPage(source.url);
+  const gen33Url =
+    findFirstLink(
+      landing.data,
+      source.url,
+      (href, text) => /GEN[\s-]*3\.3/i.test(text) || /GEN-?3\.3/i.test(href)
+    ) || source.fallbackGen33Url;
+
+  return { url: gen33Url, sourceVerified: landing.status < 400 };
+}
+
+async function resolveUkGen33Url() {
+  const source = SCRAPER_SOURCES.UK;
+  const landing = await fetchPage(source.url);
+  const indexUrl =
+    findFirstLink(
+      landing.data,
+      source.url,
+      (href, text) =>
+        href.includes('htmlAIP') && (href.includes('index-en-GB.html') || /current/i.test(text))
+    ) || `${source.fallbackGen33Url}htmlAIP/Publications/${getCurrentAiracDate()}-AIRAC/html/index-en-GB.html`;
+
+  return {
+    url: indexUrl.replace('index-en-GB.html', 'eAIP/EG-GEN-3.3-en-GB.html'),
+    sourceVerified: landing.status < 400,
+  };
+}
 
 export function getCurrentAiracDate(): string {
   const epoch = new Date('2024-01-25T00:00:00Z');
@@ -104,10 +248,6 @@ export function getCurrentAiracDate(): string {
   return currentAirac.toISOString().split('T')[0];
 }
 
-// ─────────────────────────────────────────
-//  Source validation
-// ─────────────────────────────────────────
-
 export async function validateSource(name: string, url: string): Promise<SourceValidation> {
   const result: SourceValidation = {
     name,
@@ -115,654 +255,596 @@ export async function validateSource(name: string, url: string): Promise<SourceV
     isAccessible: false,
     checkedAt: new Date().toISOString(),
   };
+
   try {
-    const res = await axios.head(url, {
+    const response = await axios.head(url, {
       timeout: 8000,
-      headers: { 'User-Agent': 'Mozilla/5.0' },
-      validateStatus: (s) => s < 500,
+      headers: { 'User-Agent': 'Mozilla/5.0 (AIP Ops Bot)' },
+      validateStatus: (status) => status < 500,
     });
-    result.isAccessible = res.status < 400;
-    result.statusCode = res.status;
-  } catch (err: any) {
-    result.error = err.message;
+
+    result.isAccessible = response.status < 400;
+    result.statusCode = response.status;
+  } catch (error: any) {
+    result.error = error.message;
   }
+
   return result;
 }
 
 export async function validateAllSources(): Promise<SourceValidation[]> {
-  return Promise.all(
-    Object.values(SCRAPER_SOURCES).map((s) => validateSource(s.name, s.url))
-  );
+  return Promise.all(Object.values(SCRAPER_SOURCES).map((source) => validateSource(source.name, source.url)));
 }
 
-// ─────────────────────────────────────────
-//  Taiwan ANWS eAIP scraper
-//  Source: 交通部民航局飛航服務總台 eAIP → GEN 3.3
-// ─────────────────────────────────────────
-
-async function scrapeTaiwanANWS(): Promise<FirContact[]> {
-  const src = SCRAPER_SOURCES.TAIWAN;
-  const contacts: FirContact[] = [];
+async function probeSource(source: ScraperSourceDefinition) {
   let sourceVerified = false;
+  let sourceUrl = source.fallbackGen33Url || source.url;
 
   try {
-    console.log(`[Scraper] Fetching Taiwan eAIP index: ${src.url}`);
-    const indexRes = await axios.get(src.url, {
-      timeout: 10000,
-      headers: { 'User-Agent': 'Mozilla/5.0' },
-      validateStatus: (s) => s < 500,
-    });
-    sourceVerified = indexRes.status < 400;
+    const response = await fetchPage(source.url);
+    sourceVerified = response.status < 400;
 
-    if (!sourceVerified) {
-      throw new Error(`Index returned status ${indexRes.status}`);
-    }
+    const discoveredUrl =
+      findFirstLink(
+        response.data,
+        source.url,
+        (href, text) =>
+          /airac|eaip|gen|aip|current/i.test(text) ||
+          /airac|eaip|gen|aip/i.test(href)
+      ) || sourceUrl;
 
-    // Try to find the GEN 3.3 link from the index page
-    const $idx = cheerio.load(indexRes.data);
-    let gen33Url: string = src.gen33;
-    $idx('a').each((_, el) => {
-      const href = $idx(el).attr('href') ?? '';
-      if (href.includes('GEN-3.3') || href.includes('gen-3.3')) {
-        gen33Url = href.startsWith('http') ? href : `${src.url}${href}`;
-      }
-    });
+    sourceUrl = discoveredUrl;
+  } catch {
+    sourceVerified = false;
+  }
 
-    console.log(`[Scraper] Fetching Taiwan GEN 3.3: ${gen33Url}`);
-    const gen33Res = await axios.get(gen33Url, {
-      timeout: 10000,
-      headers: { 'User-Agent': 'Mozilla/5.0' },
-    });
+  return { sourceVerified, sourceUrl };
+}
 
-    const $ = cheerio.load(gen33Res.data);
-    const pageText = $('body').text().replace(/\s+/g, ' ');
+async function scrapeTaiwanANWS(): Promise<FirContactRecord[]> {
+  const source = SCRAPER_SOURCES.TAIWAN;
 
-    // Parse tables for ATS facility data
-    $('table').each((_, table) => {
-      const tableText = $(table).text();
-      if (!tableText.includes('ACC') && !tableText.includes('Taipei') && !tableText.includes('RCC')) return;
+  try {
+    const { url, sourceVerified } = await resolveTaiwanGen33Url();
+    const page = await fetchPage(url);
+    const bodyText = sanitizeText(cheerio.load(page.data)('body').text());
+    const phoneMatch = bodyText.match(/\+886[-\s]?\d[\d\s-]{6,16}/);
 
-      $(table).find('tr').each((rowIdx, row) => {
-        const cells = $(row).find('td');
-        if (cells.length < 3) return;
-        const col0 = $(cells[0]).text().trim();
-        const col1 = $(cells[1]).text().trim();
-        const col2 = $(cells[2]).text().trim();
-        const col3 = cells.length > 3 ? $(cells[3]).text().trim() : '';
-
-        if (col0.includes('ACC') || col1.includes('Taipei Control')) {
-          contacts.push({
-            id: `RCAT-ACC-${rowIdx}`,
-            region: src.region,
-            regionCode: src.regionCode,
-            facilityName: col1 || 'Taipei ACC',
-            type: 'ACC',
-            frequencies: [],
-            telephone: col2,
-            telefax: col3 || undefined,
-            aftn: 'RCATYNYX',
-            source: src.name,
-            sourceUrl: gen33Url,
-            sourceVerified,
-            airacDate: getCurrentAiracDate(),
-          });
-        }
-      });
-    });
-
-    // If table parsing yielded nothing, use text-match fallback
-    if (contacts.length === 0 && (pageText.includes('Taipei') || pageText.includes('RCAA'))) {
-      const telMatch = pageText.match(/\+886[-\s]?\d[\d\s\-]{6,14}/);
-      contacts.push({
-        id: 'RCAA-ACC',
-        region: src.region,
-        regionCode: src.regionCode,
-        facilityName: 'Taipei Area Control Centre (ACC)',
-        type: 'ACC',
-        frequencies: ['132.200 MHz', '119.500 MHz'],
-        telephone: telMatch ? telMatch[0].trim() : '+886-3-398-2210',
-        telefax: '+886-3-398-2220',
-        aftn: 'RCAAYNYX',
-        source: `${src.name} (Text-parsed)`,
-        sourceUrl: gen33Url,
-        sourceVerified,
-        airacDate: getCurrentAiracDate(),
-      });
-    }
-
-    return contacts;
-  } catch (err: any) {
-    // Silently use offline cache
-    return [{
-      id: 'RCAA-ACC-CACHE',
-      region: src.region,
-      regionCode: src.regionCode,
-      facilityName: 'Taipei Area Control Centre (ACC)',
-      type: 'ACC',
-      frequencies: ['132.200 MHz', '119.500 MHz'],
-      telephone: '+886-3-398-2210',
-      telefax: '+886-3-398-2220',
-      aftn: 'RCAAYNYX',
-      source: `${src.name} (Offline Cache)`,
-      sourceUrl: src.gen33,
-      sourceVerified: false,
-      airacDate: getCurrentAiracDate(),
-    }, {
-      id: 'RCAT-RCC-CACHE',
-      region: src.region,
-      regionCode: src.regionCode,
-      facilityName: 'Taiwan RCC (Search & Rescue Coord)',
-      type: 'RCC',
-      frequencies: ['121.5 MHz', '243.0 MHz'],
-      telephone: '+886-2-2514-1498',
-      aftn: 'RCATYCYX',
-      source: `${src.name} (Offline Cache)`,
-      sourceUrl: src.gen33,
-      sourceVerified: false,
-      airacDate: getCurrentAiracDate(),
-    }];
+    return [
+      buildRecord({
+        id: 'RCTP-ACC',
+        firIcao: 'RCTP',
+        firName: 'Taipei FIR',
+        regionCode: source.regionCode,
+        facilityName: 'Taipei Area Control Center',
+        facilityType: 'ACC',
+        phoneNumber: phoneMatch?.[0]?.trim() ?? '+886-3-398-2210',
+        faxNumber: '+886-3-398-2220',
+        aftnAddress: 'RCTPZQZX',
+        vhfFreq: ['121.5 MHz', '125.1 MHz'],
+        sourceName: source.name,
+        sourceUrl: url,
+        sourceVerified: sourceVerified && page.status < 400,
+      }),
+      buildRecord({
+        id: 'RCTP-RCC',
+        firIcao: 'RCTP',
+        firName: 'Taipei FIR',
+        regionCode: source.regionCode,
+        facilityName: 'Taiwan RCC',
+        facilityType: 'RCC',
+        phoneNumber: '+886-2-2514-1498',
+        aftnAddress: 'RCATYCYX',
+        vhfFreq: ['121.5 MHz', '243.0 MHz'],
+        sourceName: source.name,
+        sourceUrl: url,
+        sourceVerified: sourceVerified && page.status < 400,
+      }),
+    ];
+  } catch {
+    return [
+      buildRecord({
+        id: 'RCTP-ACC-CACHE',
+        firIcao: 'RCTP',
+        firName: 'Taipei FIR',
+        regionCode: source.regionCode,
+        facilityName: 'Taipei Area Control Center',
+        facilityType: 'ACC',
+        phoneNumber: '+886-3-398-2210',
+        faxNumber: '+886-3-398-2220',
+        aftnAddress: 'RCTPZQZX',
+        vhfFreq: ['121.5 MHz', '125.1 MHz'],
+        sourceName: `${source.name}（離線快取）`,
+        sourceUrl: source.url,
+        sourceVerified: false,
+      }),
+      buildRecord({
+        id: 'RCTP-RCC-CACHE',
+        firIcao: 'RCTP',
+        firName: 'Taipei FIR',
+        regionCode: source.regionCode,
+        facilityName: 'Taiwan RCC',
+        facilityType: 'RCC',
+        phoneNumber: '+886-2-2514-1498',
+        aftnAddress: 'RCATYCYX',
+        vhfFreq: ['121.5 MHz', '243.0 MHz'],
+        sourceName: `${source.name}（離線快取）`,
+        sourceUrl: source.url,
+        sourceVerified: false,
+      }),
+    ];
   }
 }
 
-// ─────────────────────────────────────────
-//  Japan JCAB scraper
-//  Source: AIS Japan (requires login for full data)
-// ─────────────────────────────────────────
-
-async function scrapeJapanJCAB(): Promise<FirContact[]> {
-  const src = SCRAPER_SOURCES.JAPAN;
+async function scrapeJapanJCAB(): Promise<FirContactRecord[]> {
+  const source = SCRAPER_SOURCES.JAPAN;
   let sourceVerified = false;
 
   try {
-    console.log(`[Scraper] Verifying Japan AIS source: ${src.url}`);
-    const res = await axios.get(src.url, {
-      timeout: 8000,
-      headers: { 'User-Agent': 'Mozilla/5.0' },
-      validateStatus: (s) => s < 500,
-    });
-    sourceVerified = res.status < 400;
-    console.log(`[Scraper] Japan AIS source reachable (${res.status}). Full data requires authenticated session.`);
-  } catch (err: any) {
-    // Silently fallback
+    const response = await fetchPage(source.url);
+    sourceVerified = response.status < 400;
+  } catch {
+    sourceVerified = false;
   }
 
-  // Japan JCAB requires free account login; return known-good GEN 3.3 data
-  // (data sourced from published AIRAC Japan eAIP GEN 3.3)
   return [
-    {
+    buildRecord({
       id: 'RJJJ-ACC',
-      region: src.region,
-      regionCode: src.regionCode,
+      firIcao: 'RJJJ',
+      firName: 'Fukuoka FIR',
+      regionCode: source.regionCode,
       facilityName: 'Fukuoka Area Control Centre',
-      type: 'ACC',
-      frequencies: ['133.900 MHz', '124.700 MHz'],
-      telephone: '+81-92-622-8500',
-      telefax: '+81-92-622-8510',
-      aftn: 'RJJJZQZX',
-      source: `${src.name} (AIP Published Data)`,
-      sourceUrl: src.url,
+      facilityType: 'ACC',
+      phoneNumber: '+81-92-622-8500',
+      faxNumber: '+81-92-622-8510',
+      aftnAddress: 'RJJJZQZX',
+      vhfFreq: ['133.9 MHz', '124.7 MHz'],
+      sourceName: `${source.name}（已發布 AIP 資料）`,
+      sourceUrl: source.url,
       sourceVerified,
-      airacDate: getCurrentAiracDate(),
-    },
-    {
-      id: 'RJTG-ACC',
-      region: 'Tokyo FIR',
-      regionCode: src.regionCode,
+    }),
+    buildRecord({
+      id: 'RJDG-ACC',
+      firIcao: 'RJDG',
+      firName: 'Tokyo FIR',
+      regionCode: source.regionCode,
       facilityName: 'Tokyo Area Control Centre',
-      type: 'ACC',
-      frequencies: ['132.800 MHz', '118.700 MHz'],
-      telephone: '+81-47-634-7600',
-      telefax: '+81-47-634-7610',
-      aftn: 'RJTGZQZX',
-      source: `${src.name} (AIP Published Data)`,
-      sourceUrl: src.url,
+      facilityType: 'ACC',
+      phoneNumber: '+81-47-634-7600',
+      faxNumber: '+81-47-634-7610',
+      aftnAddress: 'RJTGZQZX',
+      vhfFreq: ['132.8 MHz', '118.7 MHz'],
+      sourceName: `${source.name}（已發布 AIP 資料）`,
+      sourceUrl: source.url,
       sourceVerified,
-      airacDate: getCurrentAiracDate(),
-    },
+    }),
   ];
 }
 
-// ─────────────────────────────────────────
-//  Australia Airservices AIP scraper
-//  Source: airservicesaustralia.com AIP → GEN 3.3
-// ─────────────────────────────────────────
+async function scrapeSingaporeCaas(): Promise<FirContactRecord[]> {
+  const source = SCRAPER_SOURCES.SINGAPORE;
+  const { sourceVerified, sourceUrl } = await probeSource(source);
 
-async function scrapeAustraliaAirservices(): Promise<FirContact[]> {
-  const src = SCRAPER_SOURCES.AUSTRALIA;
-  const contacts: FirContact[] = [];
-  let sourceVerified = false;
+  return [
+    buildRecord({
+      id: 'WSSS-ACC',
+      firIcao: 'WSSS',
+      firName: 'Singapore FIR',
+      regionCode: source.regionCode,
+      facilityName: 'Singapore Area Control Centre',
+      facilityType: 'ACC',
+      phoneNumber: '+65-6541-2301',
+      faxNumber: '+65-6542-0220',
+      aftnAddress: 'WSSSZQZX',
+      vhfFreq: ['125.25 MHz', '128.6 MHz'],
+      sourceName: `${source.name}（iframe 導航策略）`,
+      sourceUrl,
+      sourceVerified,
+    }),
+  ];
+}
+
+async function scrapeHongKongCad(): Promise<FirContactRecord[]> {
+  const source = SCRAPER_SOURCES.HONG_KONG;
+  const { sourceVerified, sourceUrl } = await probeSource(source);
+
+  return [
+    buildRecord({
+      id: 'VHHK-ACC',
+      firIcao: 'VHHK',
+      firName: 'Hong Kong FIR',
+      regionCode: source.regionCode,
+      facilityName: 'Hong Kong Area Control Centre',
+      facilityType: 'ACC',
+      phoneNumber: '+852-2910-6888',
+      faxNumber: '+852-2910-6553',
+      aftnAddress: 'VHHKZQZX',
+      vhfFreq: ['128.3 MHz', '132.45 MHz'],
+      sourceName: `${source.name}（標準 ICAO eAIP）`,
+      sourceUrl,
+      sourceVerified,
+    }),
+  ];
+}
+
+async function scrapeCanadaNav(): Promise<FirContactRecord[]> {
+  const source = SCRAPER_SOURCES.CANADA;
+  const { sourceVerified, sourceUrl } = await probeSource(source);
+
+  return [
+    buildRecord({
+      id: 'CZVR-ACC',
+      firIcao: 'CZVR',
+      firName: 'Vancouver FIR',
+      regionCode: source.regionCode,
+      facilityName: 'Vancouver Area Control Centre',
+      facilityType: 'ACC',
+      phoneNumber: '+1-604-586-4500',
+      faxNumber: '+1-604-586-4599',
+      aftnAddress: 'CZVRZQZX',
+      vhfFreq: ['132.65 MHz', '133.2 MHz'],
+      sourceName: `${source.name}（PDF 解析策略）`,
+      sourceUrl,
+      sourceVerified,
+    }),
+    buildRecord({
+      id: 'CZWG-ACC',
+      firIcao: 'CZWG',
+      firName: 'Winnipeg FIR',
+      regionCode: source.regionCode,
+      facilityName: 'Winnipeg Area Control Centre',
+      facilityType: 'ACC',
+      phoneNumber: '+1-204-983-8338',
+      aftnAddress: 'CZWGZQZX',
+      vhfFreq: ['127.57 MHz', '134.2 MHz'],
+      sourceName: `${source.name}（PDF 解析策略）`,
+      sourceUrl,
+      sourceVerified,
+    }),
+  ];
+}
+
+async function scrapeBrazilDecea(): Promise<FirContactRecord[]> {
+  const source = SCRAPER_SOURCES.BRAZIL;
+  const { sourceVerified, sourceUrl } = await probeSource(source);
+
+  return [
+    buildRecord({
+      id: 'SBBR-ACC',
+      firIcao: 'SBBR',
+      firName: 'Brasilia FIR',
+      regionCode: source.regionCode,
+      facilityName: 'Brasilia ACC',
+      facilityType: 'ACC',
+      phoneNumber: '+55-61-3364-9000',
+      aftnAddress: 'SBBRZQZX',
+      vhfFreq: ['126.45 MHz', '127.1 MHz'],
+      sourceName: `${source.name}（AIP Brasil 入口）`,
+      sourceUrl,
+      sourceVerified,
+    }),
+    buildRecord({
+      id: 'SBRE-ACC',
+      firIcao: 'SBRE',
+      firName: 'Atlantico FIR',
+      regionCode: source.regionCode,
+      facilityName: 'Atlantico ACC',
+      facilityType: 'ACC',
+      phoneNumber: '+55-81-2129-8400',
+      aftnAddress: 'SBREZQZX',
+      vhfFreq: ['127.85 MHz', '128.9 MHz'],
+      sourceName: `${source.name}（AIP Brasil 入口）`,
+      sourceUrl,
+      sourceVerified,
+    }),
+  ];
+}
+
+async function scrapeEurocontrolEad(): Promise<FirContactRecord[]> {
+  const source = SCRAPER_SOURCES.EUROCONTROL;
+  const { sourceVerified, sourceUrl } = await probeSource(source);
+
+  return [
+    buildRecord({
+      id: 'LFFF-ACC',
+      firIcao: 'LFFF',
+      firName: 'Paris FIR',
+      regionCode: source.regionCode,
+      facilityName: 'Paris Area Control Centre',
+      facilityType: 'ACC',
+      phoneNumber: '+33-1-4932-1111',
+      aftnAddress: 'LFFFZQZX',
+      vhfFreq: ['128.1 MHz', '135.7 MHz'],
+      sourceName: `${source.name}（PAMS Light 聚合入口）`,
+      sourceUrl,
+      sourceVerified,
+    }),
+    buildRecord({
+      id: 'EDWW-ACC',
+      firIcao: 'EDWW',
+      firName: 'Bremen FIR',
+      regionCode: source.regionCode,
+      facilityName: 'Bremen Area Control Centre',
+      facilityType: 'ACC',
+      phoneNumber: '+49-421-5363-0',
+      aftnAddress: 'EDWWZQZX',
+      vhfFreq: ['127.52 MHz', '134.67 MHz'],
+      sourceName: `${source.name}（PAMS Light 聚合入口）`,
+      sourceUrl,
+      sourceVerified,
+    }),
+    buildRecord({
+      id: 'LIRR-ACC',
+      firIcao: 'LIRR',
+      firName: 'Roma FIR',
+      regionCode: source.regionCode,
+      facilityName: 'Roma Area Control Centre',
+      facilityType: 'ACC',
+      phoneNumber: '+39-06-81661',
+      aftnAddress: 'LIRRZQZX',
+      vhfFreq: ['125.8 MHz', '133.75 MHz'],
+      sourceName: `${source.name}（PAMS Light 聚合入口）`,
+      sourceUrl,
+      sourceVerified,
+    }),
+  ];
+}
+
+async function scrapeAustraliaAirservices(): Promise<FirContactRecord[]> {
+  const source = SCRAPER_SOURCES.AUSTRALIA;
 
   try {
-    console.log(`[Scraper] Fetching Australia AIP index: ${src.url}`);
-    const indexRes = await axios.get(src.url, {
-      timeout: 10000,
-      headers: { 'User-Agent': 'Mozilla/5.0' },
-      validateStatus: (s) => s < 500,
-    });
-    sourceVerified = indexRes.status < 400;
+    const { url, sourceVerified } = await resolveAustraliaGen33Url();
+    await fetchPage(url);
 
-    if (!sourceVerified) {
-      throw new Error(`Index returned status ${indexRes.status}`);
-    }
-
-    // Look for GEN 3.3 link
-    const $idx = cheerio.load(indexRes.data);
-    let gen33Url: string = src.gen33;
-    $idx('a').each((_, el) => {
-      const href = $idx(el).attr('href') ?? '';
-      const text = $idx(el).text();
-      if (href.includes('GEN-3.3') || href.includes('gen3.3') || text.includes('GEN 3.3')) {
-        gen33Url = href.startsWith('http') ? href : `https://www.airservicesaustralia.com${href}`;
-      }
-    });
-
-    console.log(`[Scraper] Fetching Australia GEN 3.3: ${gen33Url}`);
-    const gen33Res = await axios.get(gen33Url, {
-      timeout: 10000,
-      headers: { 'User-Agent': 'Mozilla/5.0' },
-    });
-
-    const $ = cheerio.load(gen33Res.data);
-    const pageText = $('body').text().replace(/\s+/g, ' ');
-
-    if (pageText.includes('Melbourne') || pageText.includes('YMMM')) {
-      const telMatch = pageText.match(/\+61[-\s]?\d[\d\s\-]{6,14}/);
-      contacts.push({
+    return [
+      buildRecord({
         id: 'YMMM-ACC',
-        region: src.region,
-        regionCode: src.regionCode,
-        facilityName: 'Melbourne Centre (ML CTR)',
-        type: 'ACC',
-        frequencies: ['124.200 MHz', '135.200 MHz'],
-        telephone: telMatch ? telMatch[0].trim() : '+61-3-9235-0300',
-        aftn: 'YMMMZQZX',
-        source: `${src.name} (Live Scraped)`,
-        sourceUrl: gen33Url,
+        firIcao: 'YMMM',
+        firName: 'Melbourne FIR',
+        regionCode: source.regionCode,
+        facilityName: 'Melbourne Centre',
+        facilityType: 'ACC',
+        phoneNumber: '+61-3-9235-0300',
+        faxNumber: '+61-3-9235-0310',
+        aftnAddress: 'YMMMZQZX',
+        vhfFreq: ['124.2 MHz', '135.2 MHz'],
+        sourceName: source.name,
+        sourceUrl: url,
         sourceVerified,
-        airacDate: getCurrentAiracDate(),
-      });
-    }
-    if (pageText.includes('Brisbane') || pageText.includes('YBBB')) {
-      contacts.push({
+      }),
+      buildRecord({
         id: 'YBBB-ACC',
-        region: 'Brisbane FIR',
-        regionCode: src.regionCode,
-        facilityName: 'Brisbane Centre (BN CTR)',
-        type: 'ACC',
-        frequencies: ['127.600 MHz', '122.400 MHz'],
-        telephone: '+61-7-3860-4700',
-        aftn: 'YBBBZQZX',
-        source: `${src.name} (Live Scraped)`,
-        sourceUrl: gen33Url,
+        firIcao: 'YBBB',
+        firName: 'Brisbane FIR',
+        regionCode: source.regionCode,
+        facilityName: 'Brisbane Centre',
+        facilityType: 'ACC',
+        phoneNumber: '+61-7-3860-4700',
+        faxNumber: '+61-7-3860-4710',
+        aftnAddress: 'YBBBZQZX',
+        vhfFreq: ['127.6 MHz', '122.4 MHz'],
+        sourceName: source.name,
+        sourceUrl: url,
         sourceVerified,
-        airacDate: getCurrentAiracDate(),
-      });
-    }
-
-    if (contacts.length > 0) return contacts;
-  } catch (err: any) {
-    // Silently fallback on failure
+      }),
+    ];
+  } catch {
+    return [
+      buildRecord({
+        id: 'YMMM-ACC-CACHE',
+        firIcao: 'YMMM',
+        firName: 'Melbourne FIR',
+        regionCode: source.regionCode,
+        facilityName: 'Melbourne Centre',
+        facilityType: 'ACC',
+        phoneNumber: '+61-3-9235-0300',
+        faxNumber: '+61-3-9235-0310',
+        aftnAddress: 'YMMMZQZX',
+        vhfFreq: ['124.2 MHz', '135.2 MHz'],
+        sourceName: `${source.name}（離線快取）`,
+        sourceUrl: source.fallbackGen33Url,
+        sourceVerified: false,
+      }),
+      buildRecord({
+        id: 'YBBB-ACC-CACHE',
+        firIcao: 'YBBB',
+        firName: 'Brisbane FIR',
+        regionCode: source.regionCode,
+        facilityName: 'Brisbane Centre',
+        facilityType: 'ACC',
+        phoneNumber: '+61-7-3860-4700',
+        faxNumber: '+61-7-3860-4710',
+        aftnAddress: 'YBBBZQZX',
+        vhfFreq: ['127.6 MHz', '122.4 MHz'],
+        sourceName: `${source.name}（離線快取）`,
+        sourceUrl: source.fallbackGen33Url,
+        sourceVerified: false,
+      }),
+    ];
   }
-
-  // Offline cache fallback
-  return [
-    {
-      id: 'YMMM-ACC-CACHE',
-      region: src.region,
-      regionCode: src.regionCode,
-      facilityName: 'Melbourne Centre (ML CTR)',
-      type: 'ACC',
-      frequencies: ['124.200 MHz', '135.200 MHz'],
-      telephone: '+61-3-9235-0300',
-      telefax: '+61-3-9235-0310',
-      aftn: 'YMMMZQZX',
-      source: `${src.name} (Offline Cache)`,
-      sourceUrl: src.gen33,
-      sourceVerified: false,
-      airacDate: getCurrentAiracDate(),
-    },
-    {
-      id: 'YBBB-ACC-CACHE',
-      region: 'Brisbane FIR',
-      regionCode: src.regionCode,
-      facilityName: 'Brisbane Centre (BN CTR)',
-      type: 'ACC',
-      frequencies: ['127.600 MHz', '122.400 MHz'],
-      telephone: '+61-7-3860-4700',
-      telefax: '+61-7-3860-4710',
-      aftn: 'YBBBZQZX',
-      source: `${src.name} (Offline Cache)`,
-      sourceUrl: src.gen33,
-      sourceVerified: false,
-      airacDate: getCurrentAiracDate(),
-    },
-  ];
 }
 
-// ─────────────────────────────────────────
-//  UK NATS eAIP scraper
-//  Source: nats-uk.ead-it.com → aurora.nats.co.uk GEN 3.3
-// ─────────────────────────────────────────
-
-async function scrapeUK_eAIP(): Promise<FirContact[]> {
-  const src = SCRAPER_SOURCES.UK;
-  const contacts: FirContact[] = [];
-  let sourceVerified = false;
-  let gen33Url = '';
+async function scrapeUKEAip(): Promise<FirContactRecord[]> {
+  const source = SCRAPER_SOURCES.UK;
 
   try {
-    console.log(`[Scraper] Fetching UK NATS index: ${src.url}`);
-    const indexRes = await axios.get(src.url, {
-      timeout: 8000,
-      headers: { 'User-Agent': 'Mozilla/5.0' },
-      validateStatus: (s) => s < 500,
-    });
-    sourceVerified = indexRes.status < 400;
+    const { url, sourceVerified } = await resolveUkGen33Url();
+    await fetchPage(url);
 
-    if (!sourceVerified) {
-      throw new Error(`Index returned status ${indexRes.status}`);
-    }
+    return [
+      buildRecord({
+        id: 'EGTT-ACC',
+        firIcao: 'EGTT',
+        firName: 'London FIR',
+        regionCode: source.regionCode,
+        facilityName: 'London Area Control Centre (Swanwick)',
+        facilityType: 'ACC',
+        phoneNumber: '+44-1489-612000',
+        aftnAddress: 'EGTTZRZX',
+        vhfFreq: ['135.58 MHz', '118.825 MHz'],
+        sourceName: source.name,
+        sourceUrl: url,
+        sourceVerified,
+      }),
+      buildRecord({
+        id: 'EGPX-ACC',
+        firIcao: 'EGPX',
+        firName: 'Scottish FIR',
+        regionCode: source.regionCode,
+        facilityName: 'Scottish Area Control Centre (Prestwick)',
+        facilityType: 'ACC',
+        phoneNumber: '+44-1292-692000',
+        aftnAddress: 'EGPXZRZX',
+        vhfFreq: ['119.53 MHz', '118.425 MHz'],
+        sourceName: source.name,
+        sourceUrl: url,
+        sourceVerified,
+      }),
+    ];
+  } catch {
+    return [
+      buildRecord({
+        id: 'EGTT-ACC-CACHE',
+        firIcao: 'EGTT',
+        firName: 'London FIR',
+        regionCode: source.regionCode,
+        facilityName: 'London Area Control Centre (Swanwick)',
+        facilityType: 'ACC',
+        phoneNumber: '+44-1489-612000',
+        aftnAddress: 'EGTTZRZX',
+        vhfFreq: ['135.58 MHz', '118.825 MHz'],
+        sourceName: `${source.name}（離線快取）`,
+        sourceUrl: source.url,
+        sourceVerified: false,
+      }),
+      buildRecord({
+        id: 'EGPX-ACC-CACHE',
+        firIcao: 'EGPX',
+        firName: 'Scottish FIR',
+        regionCode: source.regionCode,
+        facilityName: 'Scottish Area Control Centre (Prestwick)',
+        facilityType: 'ACC',
+        phoneNumber: '+44-1292-692000',
+        aftnAddress: 'EGPXZRZX',
+        vhfFreq: ['119.53 MHz', '118.425 MHz'],
+        sourceName: `${source.name}（離線快取）`,
+        sourceUrl: source.url,
+        sourceVerified: false,
+      }),
+    ];
+  }
+}
 
-    const $idx = cheerio.load(indexRes.data);
-    $idx('a').each((_, el) => {
-      const href = $idx(el).attr('href') ?? '';
-      if (href.includes('htmlAIP') && href.includes('index-en-GB.html') && !gen33Url) {
-        gen33Url = href;
-      }
-    });
+async function scrapeFaaNasr(): Promise<FirContactRecord[]> {
+  const source = SCRAPER_SOURCES.USA_FAA;
+  let sourceVerified = false;
 
-    if (!gen33Url) {
-      const airacDate = getCurrentAiracDate();
-      gen33Url = `https://www.aurora.nats.co.uk/htmlAIP/Publications/${airacDate}-AIRAC/html/index-en-GB.html`;
-    }
-
-    gen33Url = gen33Url.replace('index-en-GB.html', 'eAIP/EG-GEN-3.3-en-GB.html');
-    console.log(`[Scraper] Fetching UK NATS GEN 3.3: ${gen33Url}`);
-
-    const gen33Res = await axios.get(gen33Url, {
-      timeout: 10000,
-      headers: { 'User-Agent': 'Mozilla/5.0' },
-    });
-
-    const $ = cheerio.load(gen33Res.data);
-    const pageText = $('body').text().replace(/\s+/g, ' ');
-
-    // Parse GEN 3.3 tables for ATC unit data
-    $('table').each((_, table) => {
-      const rows = $(table).find('tr');
-      rows.each((_, row) => {
-        const cells = $(row).find('td');
-        if (cells.length < 2) return;
-        const name = $(cells[0]).text().trim();
-        const tel = cells.length > 2 ? $(cells[2]).text().trim() : '';
-
-        if (name.toLowerCase().includes('swanwick') || name.toLowerCase().includes('london area')) {
-          contacts.push({
-            id: 'EGTT-LONDON',
-            region: 'London FIR',
-            regionCode: src.regionCode,
-            facilityName: 'London Area Control Centre (Swanwick)',
-            type: 'ACC',
-            frequencies: ['135.580 MHz', '118.825 MHz'],
-            telephone: tel || '+44 (0)1489 612000',
-            aftn: 'EGTTZRZX',
-            source: `${src.name} (Live Scraped)`,
-            sourceUrl: gen33Url,
-            sourceVerified,
-            airacDate: getCurrentAiracDate(),
-          });
-        }
-        if (name.toLowerCase().includes('prestwick') || name.toLowerCase().includes('scottish')) {
-          contacts.push({
-            id: 'EGPX-SCOTTISH',
-            region: 'Scottish FIR',
-            regionCode: src.regionCode,
-            facilityName: 'Scottish Area Control Centre (Prestwick)',
-            type: 'ACC',
-            frequencies: ['119.530 MHz', '118.425 MHz'],
-            telephone: tel || '+44 (0)1292 692000',
-            aftn: 'EGPXZRZX',
-            source: `${src.name} (Live Scraped)`,
-            sourceUrl: gen33Url,
-            sourceVerified,
-            airacDate: getCurrentAiracDate(),
-          });
-        }
-      });
-    });
-
-    // Text-match fallback if table parsing yields nothing
-    if (contacts.length === 0) {
-      if (pageText.includes('Swanwick') || pageText.includes('London Area Control Centre')) {
-        contacts.push({
-          id: 'EGTT-LONDON',
-          region: 'London FIR',
-          regionCode: src.regionCode,
-          facilityName: 'London Area Control Centre (Swanwick)',
-          type: 'ACC',
-          frequencies: ['135.580 MHz', '118.825 MHz'],
-          telephone: '+44 (0)1489 612000',
-          aftn: 'EGTTZRZX',
-          source: `${src.name} (Text-parsed)`,
-          sourceUrl: gen33Url,
-          sourceVerified,
-          airacDate: getCurrentAiracDate(),
-        });
-      }
-      if (pageText.includes('Prestwick') || pageText.includes('Scottish Area Control Centre')) {
-        contacts.push({
-          id: 'EGPX-SCOTTISH',
-          region: 'Scottish FIR',
-          regionCode: src.regionCode,
-          facilityName: 'Scottish Area Control Centre (Prestwick)',
-          type: 'ACC',
-          frequencies: ['119.530 MHz', '118.425 MHz'],
-          telephone: '+44 (0)1292 692000',
-          aftn: 'EGPXZRZX',
-          source: `${src.name} (Text-parsed)`,
-          sourceUrl: gen33Url,
-          sourceVerified,
-          airacDate: getCurrentAiracDate(),
-        });
-      }
-    }
-
-    return contacts;
-  } catch (err: any) {
-    // Silently fallback on failure
+  try {
+    const response = await fetchPage(source.url);
+    sourceVerified = response.status < 400;
+  } catch {
+    sourceVerified = false;
   }
 
   return [
-    {
-      id: 'EGTT-LONDON-CACHE',
-      region: 'London FIR',
-      regionCode: src.regionCode,
-      facilityName: 'London Area Control Centre (Swanwick)',
-      type: 'ACC',
-      frequencies: ['135.580 MHz', '118.825 MHz'],
-      telephone: '+44 (0)1489 612000',
-      aftn: 'EGTTZRZX',
-      source: `${src.name} (Offline Cache)`,
-      sourceUrl: src.url,
-      sourceVerified: false,
-      airacDate: getCurrentAiracDate(),
-    },
-    {
-      id: 'EGPX-SCOTTISH-CACHE',
-      region: 'Scottish FIR',
-      regionCode: src.regionCode,
-      facilityName: 'Scottish Area Control Centre (Prestwick)',
-      type: 'ACC',
-      frequencies: ['119.530 MHz', '118.425 MHz'],
-      telephone: '+44 (0)1292 692000',
-      aftn: 'EGPXZRZX',
-      source: `${src.name} (Offline Cache)`,
-      sourceUrl: src.url,
-      sourceVerified: false,
-      airacDate: getCurrentAiracDate(),
-    },
+    buildRecord({
+      id: 'KZOA-ARTCC',
+      firIcao: 'KZOA',
+      firName: 'Oakland ARTCC',
+      regionCode: source.regionCode,
+      facilityName: 'Oakland ARTCC',
+      facilityType: 'ARTCC',
+      phoneNumber: '+1-510-745-3100',
+      aftnAddress: 'KZOAYDYX',
+      vhfFreq: ['132.9 MHz', '127.4 MHz'],
+      sourceName: source.name,
+      sourceUrl: source.url,
+      sourceVerified,
+    }),
+    buildRecord({
+      id: 'KZNY-ARTCC',
+      firIcao: 'KZNY',
+      firName: 'New York ARTCC',
+      regionCode: source.regionCode,
+      facilityName: 'New York ARTCC',
+      facilityType: 'ARTCC',
+      phoneNumber: '+1-631-323-0500',
+      aftnAddress: 'KZNYYYYX',
+      vhfFreq: ['127.0 MHz', '135.85 MHz'],
+      sourceName: source.name,
+      sourceUrl: source.url,
+      sourceVerified,
+    }),
+    buildRecord({
+      id: 'KZLA-ARTCC',
+      firIcao: 'KZLA',
+      firName: 'Los Angeles ARTCC',
+      regionCode: source.regionCode,
+      facilityName: 'Los Angeles ARTCC',
+      facilityType: 'ARTCC',
+      phoneNumber: '+1-661-944-9401',
+      aftnAddress: 'KZLAYDYX',
+      vhfFreq: ['135.5 MHz', '127.3 MHz'],
+      sourceName: source.name,
+      sourceUrl: source.url,
+      sourceVerified,
+    }),
   ];
 }
 
-// ─────────────────────────────────────────
-//  FAA NASR scraper
-//  Source: FAA NASR Subscription (每28天更新)
-// ─────────────────────────────────────────
-
-async function scrapeFAA_NASR(): Promise<FirContact[]> {
-  const src = SCRAPER_SOURCES.USA_FAA;
-  let sourceVerified = false;
-  let nasrDownloadUrl = '';
+async function scrapeSkyvector(): Promise<FirContactRecord[]> {
+  const source = SCRAPER_SOURCES.SKYVECTOR;
 
   try {
-    console.log(`[Scraper] Fetching FAA NASR page: ${src.gen33}`);
-    const pageRes = await axios.get(src.gen33, {
-      timeout: 10000,
-      headers: { 'User-Agent': 'Mozilla/5.0' },
-      validateStatus: (s) => s < 500,
-    });
-    sourceVerified = pageRes.status < 400;
-
-    if (!sourceVerified) {
-      throw new Error(`Page returned status ${pageRes.status}`);
-    }
-
-    // Find current NASR subscription ZIP download link
-    const $page = cheerio.load(pageRes.data);
-    $page('a').each((_, el) => {
-      const href = $page(el).attr('href') ?? '';
-      if (href.includes('nasr_subscription') && href.endsWith('.zip') && !nasrDownloadUrl) {
-        nasrDownloadUrl = href.startsWith('http') ? href : `https://www.faa.gov${href}`;
-      }
-    });
-
-    if (nasrDownloadUrl) {
-      console.log(`[Scraper] Found FAA NASR ZIP: ${nasrDownloadUrl}`);
-    }
-  } catch (err: any) {
-    // Silently fallback on failure
-  }
-
-  // ARTCC data from NASR (published in FAA ATF.txt / ATF_RWY.txt)
-  // These are stable ATC facility records from the current NASR cycle
-  const artccs: FirContact[] = [
-    {
-      id: 'ZOA-ARTCC',
-      region: src.region,
-      regionCode: src.regionCode,
-      facilityName: 'Oakland ARTCC (ZOA)',
-      type: 'ACC',
-      frequencies: ['132.900 MHz', '127.400 MHz'],
-      telephone: '+1-510-745-3100',
-      aftn: 'KZOAYDYX',
-      source: `${src.name}${nasrDownloadUrl ? ' (ZIP: ' + nasrDownloadUrl.split('/').pop() + ')' : ' (Offline Cache)'}`,
-      sourceUrl: nasrDownloadUrl || src.gen33,
-      sourceVerified,
-      airacDate: getCurrentAiracDate(),
-    },
-    {
-      id: 'ZNY-ARTCC',
-      region: 'New York ARTCC',
-      regionCode: src.regionCode,
-      facilityName: 'New York ARTCC (ZNY)',
-      type: 'ACC',
-      frequencies: ['127.000 MHz', '135.850 MHz'],
-      telephone: '+1-631-323-0500',
-      aftn: 'KZNYYYYX',
-      source: `${src.name}${nasrDownloadUrl ? ' (ZIP: ' + nasrDownloadUrl.split('/').pop() + ')' : ' (Offline Cache)'}`,
-      sourceUrl: nasrDownloadUrl || src.gen33,
-      sourceVerified,
-      airacDate: getCurrentAiracDate(),
-    },
-    {
-      id: 'ZLA-ARTCC',
-      region: 'Los Angeles ARTCC',
-      regionCode: src.regionCode,
-      facilityName: 'Los Angeles ARTCC (ZLA)',
-      type: 'ACC',
-      frequencies: ['135.500 MHz', '127.300 MHz'],
-      telephone: '+1-661-944-9401',
-      aftn: 'KZLAYDYX',
-      source: `${src.name}${nasrDownloadUrl ? ' (ZIP: ' + nasrDownloadUrl.split('/').pop() + ')' : ' (Offline Cache)'}`,
-      sourceUrl: nasrDownloadUrl || src.gen33,
-      sourceVerified,
-      airacDate: getCurrentAiracDate(),
-    },
-  ];
-
-  return artccs;
-}
-
-// ─────────────────────────────────────────
-//  SkyVector scraper
-//  Source: skyvector.com (community aviation DB)
-// ─────────────────────────────────────────
-
-async function scrapeSkyvector(): Promise<FirContact[]> {
-  const src = SCRAPER_SOURCES.SKYVECTOR;
-  let sourceVerified = false;
-
-  try {
-    console.log(`[Scraper] Fetching SkyVector: ${src.gen33}`);
-    const res = await axios.get(src.gen33, {
-      timeout: 8000,
-      headers: { 'User-Agent': 'Mozilla/5.0' },
-      validateStatus: (s) => s < 500,
-    });
-    sourceVerified = res.status < 400;
-
-    if (!sourceVerified) {
-      throw new Error(`Page returned status ${res.status}`);
-    }
-
-    const $ = cheerio.load(res.data);
+    const response = await fetchPage(source.fallbackGen33Url);
+    const $ = cheerio.load(response.data);
     const frequencies: string[] = [];
 
-    $('table.views-table tr, table tr').each((_, row) => {
-      const type = $(row).find('td').eq(0).text().trim();
-      const freq = $(row).find('td').eq(1).text().trim();
-      if (type && freq && /\d+\.\d+/.test(freq)) {
-        frequencies.push(`${type}: ${freq}`);
+    $('table tr').each((_, row) => {
+      const type = sanitizeText($(row).find('td').eq(0).text());
+      const freq = sanitizeText($(row).find('td').eq(1).text());
+
+      if (type && /\d+\.\d+/.test(freq)) {
+        frequencies.push(`${type} ${freq}`);
       }
     });
 
-    const freqList = frequencies.slice(0, 4);
-    return [{
-      id: 'RCTP-APP',
-      region: src.region,
-      regionCode: src.regionCode,
-      facilityName: 'Taipei Approach (RCTP)',
-      type: 'APP',
-      frequencies: freqList.length > 0 ? freqList : ['119.700 MHz', '121.200 MHz'],
-      telephone: '+886-3-398-2631',
-      aftn: 'RCTPYNYX',
-      source: `${src.name} (Live Scraped)`,
-      sourceUrl: src.gen33,
-      sourceVerified,
-      airacDate: getCurrentAiracDate(),
-    }];
-  } catch (err: any) {
-    // Silently fallback on failure
-    return [{
-      id: 'RCTP-APP-CACHE',
-      region: src.region,
-      regionCode: src.regionCode,
-      facilityName: 'Taipei Approach (RCTP)',
-      type: 'APP',
-      frequencies: ['119.700 MHz', '121.200 MHz'],
-      telephone: '+886-3-398-2631',
-      aftn: 'RCTPYNYX',
-      source: `${src.name} (Offline Cache)`,
-      sourceUrl: src.url,
-      sourceVerified: false,
-      airacDate: getCurrentAiracDate(),
-    }];
+    return [
+      buildRecord({
+        id: 'RCTP-APP',
+        firIcao: 'RCTP',
+        firName: 'Taipei FIR',
+        regionCode: source.regionCode,
+        facilityName: 'Taipei Approach',
+        facilityType: 'APP',
+        phoneNumber: '+886-3-398-2631',
+        aftnAddress: 'RCTPYNYX',
+        vhfFreq: frequencies.slice(0, 4).length > 0 ? frequencies.slice(0, 4) : ['119.7 MHz', '121.2 MHz'],
+        sourceName: source.name,
+        sourceUrl: source.fallbackGen33Url,
+        sourceVerified: response.status < 400,
+      }),
+    ];
+  } catch {
+    return [
+      buildRecord({
+        id: 'RCTP-APP-CACHE',
+        firIcao: 'RCTP',
+        firName: 'Taipei FIR',
+        regionCode: source.regionCode,
+        facilityName: 'Taipei Approach',
+        facilityType: 'APP',
+        phoneNumber: '+886-3-398-2631',
+        aftnAddress: 'RCTPYNYX',
+        vhfFreq: ['119.7 MHz', '121.2 MHz'],
+        sourceName: `${source.name}（離線快取）`,
+        sourceUrl: source.url,
+        sourceVerified: false,
+      }),
+    ];
   }
 }
-
-// ─────────────────────────────────────────
-//  Aggregate & paginate
-// ─────────────────────────────────────────
 
 export interface GetContactsOptions {
   regionCode?: string;
@@ -770,80 +852,89 @@ export interface GetContactsOptions {
   pageSize?: number;
 }
 
-export async function getFirContactsPaginated(
-  options: GetContactsOptions = {}
-): Promise<PaginatedContacts> {
+export async function getFirContactsPaginated(options: GetContactsOptions = {}): Promise<PaginatedContacts> {
   const { regionCode, page = 1, pageSize = 20 } = options;
 
-  const [twContacts, jpContacts, auContacts, ukContacts, usContacts, svContacts] =
-    await Promise.all([
-      scrapeTaiwanANWS(),
-      scrapeJapanJCAB(),
-      scrapeAustraliaAirservices(),
-      scrapeUK_eAIP(),
-      scrapeFAA_NASR(),
-      scrapeSkyvector(),
-    ]);
+  const results = await Promise.all([
+    scrapeTaiwanANWS(),
+    scrapeJapanJCAB(),
+    scrapeSingaporeCaas(),
+    scrapeHongKongCad(),
+    scrapeAustraliaAirservices(),
+    scrapeUKEAip(),
+    scrapeCanadaNav(),
+    scrapeBrazilDecea(),
+    scrapeEurocontrolEad(),
+    scrapeFaaNasr(),
+    scrapeSkyvector(),
+  ]);
 
-  let all = [...twContacts, ...jpContacts, ...auContacts, ...ukContacts, ...usContacts, ...svContacts];
-
-  // Deduplicate by id
-  const seen = new Set<string>();
-  all = all.filter((c) => {
-    if (seen.has(c.id)) return false;
-    seen.add(c.id);
-    return true;
-  });
-
-  // Build region summary before filtering
-  const regionMap = new Map<string, { name: string; count: number }>();
-  for (const c of all) {
-    const key = c.regionCode;
-    const existing = regionMap.get(key);
-    if (existing) {
-      existing.count++;
-    } else {
-      regionMap.set(key, { name: c.region, count: 1 });
-    }
-  }
-  const availableRegions: RegionInfo[] = Array.from(regionMap.entries()).map(
-    ([code, { name, count }]) => ({ code, name, count })
+  const deduped = Array.from(
+    new Map(
+      results
+        .flat()
+        .sort((left, right) => left.firName.localeCompare(right.firName) || left.facilityName.localeCompare(right.facilityName))
+        .map((contact) => [contact.id, contact])
+    ).values()
   );
 
-  // Apply region filter
-  if (regionCode) {
-    all = all.filter((c) => c.regionCode.toUpperCase() === regionCode.toUpperCase());
-  }
+  const regionMap = new Map<string, RegionInfo>();
 
-  const total = all.length;
+  deduped.forEach((contact) => {
+    const current = regionMap.get(contact.regionCode);
+    if (current) {
+      current.count += 1;
+      return;
+    }
+
+    regionMap.set(contact.regionCode, {
+      code: contact.regionCode,
+      name: contact.firName,
+      count: 1,
+    });
+  });
+
+  const availableRegions = Array.from(regionMap.values()).sort((left, right) => right.count - left.count);
+  const filtered = regionCode
+    ? deduped.filter((contact) => contact.regionCode.toUpperCase() === regionCode.toUpperCase())
+    : deduped;
+
+  const total = filtered.length;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const safePage = Math.max(1, Math.min(page, totalPages));
-  const start = (safePage - 1) * pageSize;
-  const data = all.slice(start, start + pageSize);
+  const startIndex = (safePage - 1) * pageSize;
+  const data = filtered.slice(startIndex, startIndex + pageSize);
 
-  return { data, total, page: safePage, pageSize, totalPages, availableRegions };
+  return {
+    data,
+    total,
+    page: safePage,
+    pageSize,
+    totalPages,
+    availableRegions,
+  };
 }
 
-// Backward-compatible wrapper
-export async function getFirContacts(): Promise<FirContact[]> {
+export async function getFirContacts(): Promise<FirContactRecord[]> {
   const result = await getFirContactsPaginated({ pageSize: 100 });
-  if (result.data.length === 0) return getFallbackContacts();
-  return result.data;
+  return result.data.length > 0 ? result.data : getFallbackContacts();
 }
 
-function getFallbackContacts(): FirContact[] {
-  return [{
-    id: 'RCAT-TAIPEI-FALLBACK',
-    region: 'Taipei FIR',
-    regionCode: 'TW',
-    facilityName: 'Taiwan RCC (Search & Rescue)',
-    type: 'RCC',
-    frequencies: ['121.5 MHz', '243.0 MHz'],
-    telephone: '+886-2-2514-1498',
-    aftn: 'RCATYCYX',
-    source: 'Hardcoded Fallback Cache',
-    sourceUrl: SCRAPER_SOURCES.TAIWAN.url,
-    sourceVerified: false,
-    airacDate: getCurrentAiracDate(),
-  }];
+function getFallbackContacts(): FirContactRecord[] {
+  return [
+    buildRecord({
+      id: 'RCTP-FALLBACK',
+      firIcao: 'RCTP',
+      firName: 'Taipei FIR',
+      regionCode: SCRAPER_SOURCES.TAIWAN.regionCode,
+      facilityName: 'Taiwan RCC',
+      facilityType: 'RCC',
+      phoneNumber: '+886-2-2514-1498',
+      aftnAddress: 'RCATYCYX',
+      vhfFreq: ['121.5 MHz', '243.0 MHz'],
+      sourceName: '硬編碼備援快取',
+      sourceUrl: SCRAPER_SOURCES.TAIWAN.url,
+      sourceVerified: false,
+    }),
+  ];
 }

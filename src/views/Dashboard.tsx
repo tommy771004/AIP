@@ -1,97 +1,175 @@
-import React, { useEffect, useState } from 'react';
-import { GlassPanel } from '../components/StyledComponents';
-import { DashboardData } from '../types';
-import { MOCK_DASHBOARD } from '../data/firSource';
+import React from 'react';
+import { Badge, GlassCard, GlassPanel } from '../components/StyledComponents';
+import { FirCluster, OperationsOverview, SourceValidation } from '../types';
 
 interface DashboardProps {
+  firClusters: FirCluster[];
+  overview: OperationsOverview;
+  validations: SourceValidation[];
+  isLoading: boolean;
+  lastSynced: string | null;
   onTriggerSOS: () => void;
 }
 
-export default function Dashboard({ onTriggerSOS }: DashboardProps) {
-  const [data, setData] = useState<DashboardData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+function formatTime(value: string | null) {
+  if (!value) return '等待同步';
+  return new Date(value).toLocaleString();
+}
 
-  useEffect(() => {
-    setLoading(true);
-    // Simulate async network request
-    setTimeout(() => {
-      setData(MOCK_DASHBOARD);
-      setLastUpdated(new Date());
-      setLoading(false);
-    }, 300);
-  }, []);
+export default function Dashboard({
+  firClusters,
+  overview,
+  validations,
+  isLoading,
+  lastSynced,
+  onTriggerSOS,
+}: DashboardProps) {
+  const highlightedClusters = firClusters.slice(0, 3);
 
   return (
-    <div className="flex flex-col gap-6 pt-6">
-      {/* Status Panel */}
-      <GlassPanel>
-        <div className="absolute top-0 right-0 w-32 h-32 bg-primary-container rounded-full blur-3xl opacity-50 -mr-10 -mt-10"></div>
-        <div className="flex items-start justify-between relative z-10">
+    <div className="flex flex-col gap-6">
+      <GlassPanel className="overflow-hidden">
+        <div className="absolute inset-y-0 right-0 hidden w-[40%] bg-[radial-gradient(circle_at_top,rgba(125,211,252,0.24),transparent_58%),radial-gradient(circle_at_bottom,rgba(249,115,22,0.18),transparent_48%)] md:block"></div>
+        <div className="relative z-10 grid gap-8 lg:grid-cols-[1.4fr_0.9fr]">
           <div>
-            <div className="flex items-center gap-2 mb-1">
-              <h2 className="text-[14px] font-medium text-on-surface-variant uppercase tracking-wider">目前區域</h2>
-              {loading && <span className="material-symbols-outlined text-sm animate-spin text-primary">sync</span>}
+            <div className="mb-4 flex flex-wrap items-center gap-3">
+              <Badge active color="primary">AIRAC {overview.latestAirac}</Badge>
+              <Badge color="secondary">{overview.healthySources}/{overview.totalSources} 個來源可連線</Badge>
             </div>
-            <div className="text-[24px] md:text-[32px] font-bold text-on-surface flex items-center gap-2">
-              {loading ? '載入中...' : data?.currentSectorName}
-              {!loading && data && (
-                <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-primary-container text-on-primary-container squircle-inset">
-                  <span className="material-symbols-outlined text-sm">check_circle</span>
-                </span>
-              )}
-            </div>
-            {lastUpdated && !loading && (
-              <div className="text-[12px] text-on-surface-variant mt-2 opacity-80">
-                最後更新: {lastUpdated.toLocaleTimeString()}
+            <h1 className="max-w-3xl text-4xl font-bold tracking-[-0.06em] text-on-surface md:text-6xl">
+              依 README 規格建構的 FIR 聯絡情報台，而不是展示用假卡片。
+            </h1>
+            <p className="mt-4 max-w-2xl text-base leading-7 text-on-surface-variant md:text-lg">
+              控制台目前已將 FIR ICAO、設施名稱、電話、傳真、AFTN、VHF、AIRAC 週期與來源網址都提升為第一級資料欄位。畫面重點放在作業就緒度、來源可信度與快速緊急轉接。
+            </p>
+
+            <div className="mt-8 flex flex-wrap items-center gap-4">
+              <button
+                onClick={onTriggerSOS}
+                className="inline-flex items-center gap-3 rounded-full bg-secondary px-6 py-4 text-sm font-bold uppercase tracking-[0.28em] text-on-secondary shadow-[0_16px_48px_rgba(249,115,22,0.35)] transition hover:-translate-y-0.5"
+              >
+                <span className="material-symbols-outlined">emergency</span>
+                啟動緊急轉接
+              </button>
+              <div className="rounded-full border border-white/10 bg-white/5 px-5 py-3 text-sm text-on-surface-variant">
+                最後同步：<span className="font-semibold text-on-surface">{formatTime(lastSynced)}</span>
               </div>
-            )}
-          </div>
-          <div className="flex flex-col items-end">
-            <span className="text-[12px] font-bold tracking-widest text-primary bg-primary-container px-3 py-1 rounded-full mb-2 squircle-inset uppercase">
-              {loading ? '...' : data?.connectionStatus}
-            </span>
-            <div className="text-[14px] font-medium text-on-surface-variant flex items-center gap-1">
-              {!loading && <span className="w-2 h-2 rounded-full bg-secondary pulse-glow"></span>}
-              {loading ? '...' : data?.monitoringStatus}
             </div>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
+            {[
+              ['FIR 節點', overview.firCount, '不同 FIR / ARTCC 的涵蓋數'],
+              ['設施總數', overview.facilityCount, '可直接使用的作業聯絡資料'],
+              ['已驗證', overview.verifiedFacilityCount, '通過即時來源檢查的紀錄'],
+            ].map(([label, value, detail]) => (
+              <div key={label} className="rounded-[24px] border border-white/10 bg-white/5 p-5">
+                <div className="text-[11px] uppercase tracking-[0.28em] text-on-surface-variant">{label}</div>
+                <div className="mt-3 text-4xl font-bold tracking-[-0.06em] text-on-surface">{value}</div>
+                <div className="mt-2 text-sm text-on-surface-variant">{detail}</div>
+              </div>
+            ))}
           </div>
         </div>
       </GlassPanel>
 
-      {/* SOS Trigger Cluster */}
-      <section className="flex flex-col items-center justify-center py-8">
-        <div className="relative group cursor-pointer w-full max-w-sm mx-auto flex justify-center items-center p-10">
-          <div className="absolute inset-0 bg-error-container rounded-[40px] opacity-20 pulse-glow transform scale-95 group-hover:scale-100 transition-transform duration-500"></div>
-          <button 
-            onClick={onTriggerSOS}
-            className="w-48 h-48 rounded-[40px] bg-error flex flex-col items-center justify-center relative z-10 border-4 border-error-container/30 shadow-[_-8px_-8px_20px_rgba(255,255,255,0.9),_8px_8px_20px_rgba(186,26,26,0.2),_inset_2px_2px_0px_rgba(255,255,255,0.5)] active:shadow-[inset_8px_8px_20px_rgba(186,26,26,0.4),_inset_-8px_-8px_20px_rgba(255,255,255,0.2)] active:scale-95 active:translate-y-1 transition-all duration-200"
-          >
-            <span className="material-symbols-outlined text-on-error text-[64px] mb-2" style={{fontVariationSettings: "'FILL' 1"}}>emergency</span>
-            <span className="text-[32px] font-bold text-on-error tracking-widest uppercase">SOS</span>
-          </button>
-        </div>
-        <p className="text-[14px] font-medium text-on-surface-variant text-center mt-4 px-8">
-          長按 3 秒鐘將緊急情況廣播至{data?.currentSectorName || '飛航情報區管制中心'}。
-        </p>
+      <section className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
+        <GlassPanel>
+          <div className="mb-5 flex items-center justify-between">
+            <div>
+              <div className="text-[11px] uppercase tracking-[0.28em] text-primary/80">重點 FIR</div>
+              <h2 className="mt-2 text-2xl font-bold tracking-[-0.04em] text-on-surface">作業就緒度</h2>
+            </div>
+            {isLoading && <span className="material-symbols-outlined animate-spin text-primary">progress_activity</span>}
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-3">
+            {highlightedClusters.map((cluster) => (
+              <GlassCard key={cluster.firIcao} className="bg-white/[0.03]">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <div className="text-[11px] uppercase tracking-[0.24em] text-on-surface-variant">{cluster.firIcao}</div>
+                    <h3 className="mt-2 text-xl font-semibold tracking-[-0.03em] text-on-surface">{cluster.firName}</h3>
+                  </div>
+                  <Badge
+                    active={cluster.statusTone === 'hot'}
+                    color={cluster.statusTone === 'stable' ? 'primary' : 'secondary'}
+                  >
+                    {cluster.readinessLabel}
+                  </Badge>
+                </div>
+
+                <div className="mt-5 space-y-3 text-sm text-on-surface-variant">
+                  <div className="flex items-center justify-between">
+                    <span>設施</span>
+                    <span className="font-semibold text-on-surface">{cluster.facilityCount}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span>驗證</span>
+                    <span className="font-semibold text-on-surface">{cluster.verifiedFacilities}/{cluster.facilityCount}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span>AFTN</span>
+                    <span className="font-semibold text-on-surface">{cluster.aftnAddresses[0]}</span>
+                  </div>
+                </div>
+
+                <div className="mt-5 flex flex-wrap gap-2">
+                  {cluster.frequencies.slice(0, 3).map((frequency) => (
+                    <span key={frequency} className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-on-surface">
+                      {frequency}
+                    </span>
+                  ))}
+                </div>
+              </GlassCard>
+            ))}
+          </div>
+        </GlassPanel>
+
+        <GlassPanel>
+          <div className="text-[11px] uppercase tracking-[0.28em] text-primary/80">來源健康度</div>
+          <h2 className="mt-2 text-2xl font-bold tracking-[-0.04em] text-on-surface">驗證矩陣</h2>
+          <div className="mt-5 space-y-3">
+            {validations.map((validation) => (
+              <div
+                key={validation.name}
+                className="rounded-[22px] border border-white/10 bg-white/5 px-4 py-4"
+              >
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <div className="text-sm font-semibold text-on-surface">{validation.name}</div>
+                    <div className="mt-1 text-xs text-on-surface-variant">{validation.url}</div>
+                  </div>
+                  <div className={`rounded-full px-3 py-1 text-xs font-semibold ${validation.isAccessible ? 'bg-emerald-400/15 text-emerald-200' : 'bg-amber-400/15 text-amber-100'}`}>
+                    {validation.isAccessible ? `HTTP ${validation.statusCode ?? 200}` : '使用快取'}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </GlassPanel>
       </section>
 
-      {/* Quick Actions Grid */}
-      <section className="grid grid-cols-2 gap-4">
-        {[
-          { label: '航管直通', icon: 'headset_mic', bg: 'bg-tertiary-container', fg: 'text-on-tertiary-container' },
-          { label: '救援單位', icon: 'medical_services', bg: 'bg-secondary-container', fg: 'text-on-secondary-container' },
-          { label: '航空氣象', icon: 'cloud', bg: 'bg-surface-container-high', fg: 'text-on-surface-variant' },
-          { label: '系統狀態', icon: 'speed', bg: 'bg-surface-container-high', fg: 'text-on-surface-variant' },
-        ].map((item) => (
-          <button key={item.label} className="glass-panel p-5 rounded-2xl squircle-shadow flex flex-col items-center justify-center gap-3 active:squircle-inset active:scale-95 transition-all">
-            <div className={`w-14 h-14 rounded-full ${item.bg} flex items-center justify-center squircle-inset`}>
-              <span className={`material-symbols-outlined text-3xl ${item.fg}`}>{item.icon}</span>
+      <GlassPanel>
+        <div className="mb-5">
+          <div className="text-[11px] uppercase tracking-[0.28em] text-primary/80">爬取工作流</div>
+          <h2 className="mt-2 text-2xl font-bold tracking-[-0.04em] text-on-surface">README 實作路徑</h2>
+        </div>
+        <div className="grid gap-4 md:grid-cols-4">
+          {[
+            ['1', '解析當前 AIRAC', '先從入口頁找出目前生效週期，而不是把最終頁網址寫死。'],
+            ['2', '進入 GEN 3.3', '沿著 ATS 聯絡章節前進，鎖定電話與 AFTN 所在位置。'],
+            ['3', '正規化欄位', '輸出 FIR ICAO、設施、電話、傳真、AFTN、VHF、AIRAC 與來源網址。'],
+            ['4', '安全回退', '若即時頁面失敗，明確標示快取狀態，讓值席知道資料信任度。'],
+          ].map(([step, title, detail]) => (
+            <div key={step} className="rounded-[24px] border border-white/10 bg-white/5 p-5">
+              <div className="text-4xl font-bold tracking-[-0.08em] text-primary">{step}</div>
+              <div className="mt-4 text-lg font-semibold text-on-surface">{title}</div>
+              <p className="mt-2 text-sm leading-6 text-on-surface-variant">{detail}</p>
             </div>
-            <span className="text-[20px] font-semibold text-on-surface">{item.label}</span>
-          </button>
-        ))}
-      </section>
+          ))}
+        </div>
+      </GlassPanel>
     </div>
   );
 }
