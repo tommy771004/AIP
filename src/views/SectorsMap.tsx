@@ -20,38 +20,39 @@ export default function SectorsMap({ firClusters, isLoading }: SectorsMapProps) 
   const activeCluster = firClusters.find((cluster) => cluster.firIcao === selectedFir) ?? firClusters[0];
 
   return (
-    <div className="grid gap-6 xl:grid-cols-[360px_1fr]">
-      <GlassPanel className="h-fit">
+    <div id="sectors-map-view" className="grid gap-6 xl:grid-cols-[380px_1fr] w-full">
+      <GlassPanel className="h-fit flex flex-col gap-4">
         <div className="flex items-center justify-between">
           <div>
-            <div className="text-[11px] uppercase tracking-[0.28em] text-primary/80">FIR 涵蓋</div>
-            <h2 className="mt-2 text-2xl font-bold tracking-[-0.04em] text-on-surface">區域控制矩陣</h2>
+            <div className="text-[13px] font-black tracking-widest text-primary uppercase">Coverage</div>
+            <h2 className="mt-1 text-3xl font-black text-on-surface">控制矩陣 🗺️</h2>
           </div>
-          {isLoading && <span className="material-symbols-outlined animate-spin text-primary">progress_activity</span>}
+          {isLoading && <span className="material-symbols-outlined animate-spin text-primary text-4xl">toys</span>}
         </div>
 
-        <div className="mt-6 space-y-3">
+        <div className="mt-4 space-y-4 max-h-[600px] overflow-y-auto pr-2 pb-2">
           {firClusters.map((cluster) => {
             const isActive = cluster.firIcao === activeCluster?.firIcao;
             return (
               <button
                 key={cluster.firIcao}
                 onClick={() => setSelectedFir(cluster.firIcao)}
-                className={`w-full rounded-[22px] border px-4 py-4 text-left transition ${
+                className={`w-full rounded-[32px] border-[3px] px-6 py-5 text-left transition-all duration-300 ${
                   isActive
-                    ? 'border-primary/40 bg-primary/10'
-                    : 'border-white/10 bg-white/5 hover:bg-white/8'
+                    ? 'border-primary bg-primary/5 shadow-md scale-[1.02]'
+                    : 'border-slate-100 bg-white hover:border-primary/40 hover:-translate-y-1 shadow-sm'
                 }`}
               >
                 <div className="flex items-center justify-between gap-4">
                   <div>
-                    <div className="text-[11px] uppercase tracking-[0.24em] text-on-surface-variant">{cluster.firIcao}</div>
-                    <div className="mt-1 text-lg font-semibold text-on-surface">{cluster.firName}</div>
+                    <div className={`text-sm font-black ${isActive ? 'text-primary' : 'text-secondary'}`}>{cluster.firIcao}</div>
+                    <div className="mt-1 text-xl font-black text-on-surface leading-tight">{cluster.firName}</div>
                   </div>
-                  <div className={`h-3 w-3 rounded-full ${cluster.statusTone === 'hot' ? 'bg-secondary' : cluster.statusTone === 'watch' ? 'bg-amber-300' : 'bg-emerald-300'}`}></div>
                 </div>
-                <div className="mt-3 text-sm text-on-surface-variant">
-                  {cluster.facilityCount} 筆設施 · {cluster.frequencies.slice(0, 2).join(' / ')}
+                <div className="mt-4 flex gap-2">
+                  <span className="rounded-[16px] bg-slate-50 px-4 py-2 text-xs font-black text-slate-500 border-[2px] border-slate-100">
+                    {cluster.facilityCount} 設施
+                  </span>
                 </div>
               </button>
             );
@@ -59,93 +60,80 @@ export default function SectorsMap({ firClusters, isLoading }: SectorsMapProps) 
         </div>
       </GlassPanel>
 
-      <GlassPanel className="overflow-hidden">
+      <GlassPanel className="overflow-hidden flex flex-col">
         <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
           <div>
-            <div className="text-[11px] uppercase tracking-[0.28em] text-primary/80">訊號地圖</div>
-            <h2 className="mt-2 text-3xl font-bold tracking-[-0.05em] text-on-surface">全球中繼抽象視圖</h2>
+            <div className="text-[13px] font-black tracking-widest text-primary uppercase">Signal Map</div>
+            <h2 className="mt-1 text-4xl font-black text-on-surface">全球中繼站 📡</h2>
           </div>
           {activeCluster && (
-            <div className="rounded-full border border-white/10 bg-white/5 px-5 py-3 text-sm text-on-surface-variant">
-              目前焦點：<span className="font-semibold text-on-surface">{activeCluster.firName}</span>
+            <div className="rounded-[24px] bg-blue-50 border-[3px] border-blue-100 px-6 py-3 text-sm font-bold text-blue-600 shadow-sm">
+              當前焦點：<span className="text-xl font-black ml-2 text-blue-700">{activeCluster.firName}</span>
             </div>
           )}
         </div>
 
-        <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
-          <div className="relative min-h-[520px] overflow-hidden rounded-[28px] border border-white/10 bg-[linear-gradient(180deg,rgba(11,23,39,0.9),rgba(7,17,31,0.96))]">
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(125,211,252,0.12),transparent_24%),radial-gradient(circle_at_70%_70%,rgba(249,115,22,0.12),transparent_22%)]"></div>
-            <div className="absolute inset-0 opacity-25" style={{ backgroundImage: 'linear-gradient(rgba(255,255,255,0.08) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.08) 1px, transparent 1px)', backgroundSize: '48px 48px' }}></div>
+        <div className="flex flex-col gap-6">
+          <div className="relative min-h-[480px] overflow-x-auto overflow-y-hidden rounded-[40px] border-[4px] border-slate-100 bg-[#fffdfd] shadow-inner xl:min-h-[560px]">
+            <div className="relative min-w-[760px] min-h-[480px] w-full h-full xl:min-h-[560px]">
+              
+              {/* Cute Abstract Map Background elements */}
+              <div className="absolute top-[20%] left-[20%] w-64 h-64 bg-pink-100/60 rounded-full blur-3xl mix-blend-multiply"></div>
+              <div className="absolute top-[50%] right-[30%] w-80 h-80 bg-blue-100/60 rounded-full blur-3xl mix-blend-multiply"></div>
+              <div className="absolute bottom-[10%] left-[40%] w-72 h-72 bg-yellow-100/60 rounded-full blur-3xl mix-blend-multiply"></div>
 
-            {regionSummaries.map((summary) => {
-              const config = REGION_MAP_CONFIG[summary.regionCode] ?? REGION_MAP_CONFIG.TW;
-              const relatedClusters = firClusters.filter((cluster) => cluster.regionCode === summary.regionCode);
-              const active = relatedClusters.some((cluster) => cluster.firIcao === activeCluster?.firIcao);
+              {regionSummaries.map((summary) => {
+                const config = REGION_MAP_CONFIG[summary.regionCode] ?? REGION_MAP_CONFIG.TW;
+                const relatedClusters = firClusters.filter((cluster) => cluster.regionCode === summary.regionCode);
+                const active = relatedClusters.some((cluster) => cluster.firIcao === activeCluster?.firIcao);
 
-              return (
-                <button
-                  key={summary.regionCode}
-                  onClick={() => setSelectedFir(relatedClusters[0]?.firIcao ?? null)}
-                  className="absolute text-left transition hover:scale-105"
-                  style={{ top: config.top, left: config.left }}
-                >
-                  <div className={`absolute -inset-6 rounded-full blur-2xl ${config.haloClass} ${active ? 'opacity-100' : 'opacity-60'}`}></div>
-                  <div className={`relative min-w-[148px] rounded-[26px] border border-white/10 bg-gradient-to-br ${config.accentClass} p-[1px] shadow-[0_18px_50px_rgba(0,0,0,0.3)]`}>
-                    <div className={`rounded-[25px] bg-slate-950/85 px-5 py-4 ${active ? 'ring-1 ring-white/25' : ''}`}>
-                      <div className="text-[11px] uppercase tracking-[0.26em] text-white/60">{REGION_LABELS[summary.regionCode] ?? summary.regionCode}</div>
-                      <div className="mt-1 text-lg font-semibold text-white">{config.shortName}</div>
-                      <div className="mt-3 flex items-center justify-between text-xs text-white/70">
-                        <span>{summary.facilityCount} 筆設施</span>
-                        <span>{summary.liveCount} 筆即時</span>
+                return (
+                  <button
+                    key={summary.regionCode}
+                    onClick={() => setSelectedFir(relatedClusters[0]?.firIcao ?? null)}
+                    className="absolute text-left transition-all duration-500 hover:scale-[1.15] hover:z-20 cursor-pointer"
+                    style={{ top: config.top, left: config.left }}
+                  >
+                    <div className={`relative min-w-[170px] rounded-[32px] border-[4px] p-4 shadow-xl transition-all ${
+                        active ? 'border-primary bg-white scale-110 shadow-[0_16px_40px_rgba(255,154,171,0.3)]' : 'border-white bg-white/90 backdrop-blur-md opacity-95 hover:border-pink-200'
+                    }`}>
+                      <div className="flex items-center gap-4">
+                         <div className={`flex h-12 w-12 items-center justify-center rounded-[20px] text-2xl font-black ${active ? 'bg-primary text-white scale-110' : 'bg-pink-50 text-pink-500'}`}>
+                            {summary.regionCode.slice(0,1)}
+                         </div>
+                         <div>
+                            <div className="text-sm font-black text-slate-400">{REGION_LABELS[summary.regionCode] ?? summary.regionCode}</div>
+                            <div className="text-xl font-black text-on-surface">{config.shortName}</div>
+                         </div>
                       </div>
                     </div>
-                  </div>
-                </button>
-              );
-            })}
+                  </button>
+                );
+              })}
 
-            <svg className="pointer-events-none absolute inset-0 h-full w-full opacity-45">
-              <path d="M180 210 C300 120 580 120 720 220" stroke="rgba(125,211,252,0.5)" strokeWidth="1.5" fill="none" strokeDasharray="6 8" />
-              <path d="M140 310 C260 360 450 360 660 280" stroke="rgba(249,115,22,0.45)" strokeWidth="1.5" fill="none" strokeDasharray="6 8" />
-              <path d="M680 240 C710 320 650 390 560 420" stroke="rgba(74,222,128,0.4)" strokeWidth="1.5" fill="none" strokeDasharray="6 8" />
-            </svg>
+              {/* Softer Bouncy SVG Connectors */}
+              <svg className="pointer-events-none absolute inset-0 h-full w-full opacity-60">
+                <path d="M180 210 Q300 80 580 120 T720 220" stroke="#ff9aab" strokeWidth="6" strokeLinecap="round" fill="none" strokeDasharray="10 16" />
+                <path d="M140 310 Q260 400 450 360 T660 280" stroke="#a0c4ff" strokeWidth="6" strokeLinecap="round" fill="none" strokeDasharray="10 16" />
+                <path d="M680 240 Q740 340 650 400 T560 420" stroke="#b9fbc0" strokeWidth="6" strokeLinecap="round" fill="none" strokeDasharray="10 16" />
+              </svg>
+            </div>
           </div>
 
           {activeCluster && (
-            <div className="space-y-4">
-              <div className="rounded-[24px] border border-white/10 bg-white/5 p-5">
-                <div className="text-[11px] uppercase tracking-[0.26em] text-primary/80">{activeCluster.firIcao}</div>
-                <div className="mt-2 text-2xl font-bold tracking-[-0.04em] text-on-surface">{activeCluster.firName}</div>
-                <div className="mt-2 text-sm text-on-surface-variant">{activeCluster.readinessLabel}</div>
+            <div className="grid gap-4 lg:grid-cols-2">
+              <div className="rounded-[40px] bg-white border-[3px] border-slate-100 p-8 flex flex-col justify-center shadow-sm hover:border-primary/30 transition-colors">
+                 <div className="text-[13px] font-black uppercase tracking-widest text-primary">目前檢視 FIR</div>
+                 <div className="text-[40px] leading-tight font-black text-on-surface mt-2">{activeCluster.firName} <br/><span className="text-3xl text-slate-300">({activeCluster.firIcao})</span></div>
               </div>
 
-              <div className="rounded-[24px] border border-white/10 bg-white/5 p-5">
-                <div className="text-[11px] uppercase tracking-[0.26em] text-on-surface-variant">頻率</div>
-                <div className="mt-3 flex flex-wrap gap-2">
+              <div className="rounded-[40px] bg-white border-[3px] border-slate-100 p-8 shadow-sm flex flex-col justify-center hover:border-blue-200 transition-colors">
+                <div className="text-[13px] font-black uppercase tracking-widest text-blue-500 mb-4">通訊頻率 📻</div>
+                <div className="flex flex-wrap gap-3">
                   {activeCluster.frequencies.map((frequency) => (
-                    <span key={frequency} className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-on-surface">
+                    <span key={frequency} className="rounded-[20px] bg-blue-50 border-[3px] border-blue-100 text-blue-600 px-5 py-3 font-black text-xl hover:scale-105 transition-transform cursor-default">
                       {frequency}
                     </span>
-                  ))}
-                </div>
-              </div>
-
-              <div className="rounded-[24px] border border-white/10 bg-white/5 p-5">
-                <div className="text-[11px] uppercase tracking-[0.26em] text-on-surface-variant">設施</div>
-                <div className="mt-4 space-y-3">
-                  {activeCluster.facilities.map((facility) => (
-                    <div key={facility.id} className="rounded-[18px] border border-white/10 bg-slate-950/40 p-4">
-                      <div className="flex items-center justify-between gap-4">
-                        <div>
-                          <div className="text-sm font-semibold text-on-surface">{facility.facilityName}</div>
-                          <div className="mt-1 text-xs uppercase tracking-[0.2em] text-on-surface-variant">{facility.facilityType}</div>
-                        </div>
-                        <div className="text-right text-xs text-on-surface-variant">
-                          <div>{facility.aftnAddress}</div>
-                          <div className="mt-1 text-on-surface">{facility.phoneNumber}</div>
-                        </div>
-                      </div>
-                    </div>
                   ))}
                 </div>
               </div>

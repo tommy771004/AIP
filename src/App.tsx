@@ -18,6 +18,8 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [lastSynced, setLastSynced] = useState<string | null>(null);
 
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
+
   useEffect(() => {
     let cancelled = false;
 
@@ -52,7 +54,11 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [refreshTrigger]);
+
+  const handleRefresh = () => {
+    setRefreshTrigger(prev => prev + 1);
+  };
 
   const firClusters = useMemo(() => buildFirClusters(records), [records]);
   const overview = useMemo(() => buildOperationsOverview(records, validations), [records, validations]);
@@ -62,11 +68,11 @@ export default function App() {
   }
 
   return (
-    <div className="app-shell min-h-screen text-on-surface selection:bg-primary selection:text-slate-950">
+    <div className="app-shell min-h-screen text-on-surface selection:bg-primary/30 selection:text-primary">
       <div className="pointer-events-none fixed inset-0 overflow-hidden">
-        <div className="ambient-orb ambient-orb-cyan"></div>
-        <div className="ambient-orb ambient-orb-amber"></div>
-        <div className="ambient-grid"></div>
+        <div className="ambient-orb ambient-orb-pink"></div>
+        <div className="ambient-orb ambient-orb-blue"></div>
+        <div className="ambient-orb ambient-orb-yellow"></div>
       </div>
 
       <Navigation
@@ -76,10 +82,15 @@ export default function App() {
         healthySources={overview.healthySources}
       />
 
-      <Container>
+      <Container id="app-container">
         {error && (
-          <div className="mb-6 rounded-[22px] border border-amber-400/30 bg-amber-400/10 px-5 py-4 text-sm text-amber-100">
-            API 資料流目前降級，畫面將盡量使用伺服器仍可回傳的資料。錯誤：{error}
+          <div id="error-banner" className="mb-8 rounded-[32px] border-[3px] border-red-200 bg-red-50 p-6 shadow-sm flex items-center gap-4">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-red-100 text-red-500">
+               <span className="material-symbols-outlined text-3xl font-bold">error</span>
+            </div>
+            <div className="text-[16px] font-black text-red-500">
+              連線異常：{error} ⚡ <br className="md:hidden"/><span className="text-red-400">我們會盡力顯示快取資料！</span>
+            </div>
           </div>
         )}
 
@@ -91,6 +102,7 @@ export default function App() {
             isLoading={isLoading}
             lastSynced={lastSynced}
             onTriggerSOS={() => setIsCallActive(true)}
+            onRefresh={handleRefresh}
           />
         )}
         {activeTab === 'sectors' && (
@@ -104,29 +116,14 @@ export default function App() {
           />
         )}
         {activeTab === 'chat' && (
-          <div className="panel-surface flex min-h-[520px] flex-col justify-between rounded-[32px] border border-white/10 p-8">
-            <div>
-              <div className="mb-3 text-[11px] uppercase tracking-[0.3em] text-primary/80">作業通道</div>
-              <h2 className="max-w-2xl text-3xl font-bold tracking-[-0.04em] text-on-surface md:text-5xl">
-                安全協調模式將在完成認證中繼終端後啟用。
-              </h2>
-              <p className="mt-4 max-w-2xl text-base text-on-surface-variant">
-                目前版本聚焦在 FIR 聯絡情報、來源健康度與緊急升級流程。下一階段可接入值席通訊、稽核紀錄與權限化作業流程。
-              </p>
+          <div id="chat-view" className="flex flex-1 min-h-[600px] flex-col justify-center items-center rounded-[48px] border-[4px] border-white bg-white/60 backdrop-blur-xl p-8 text-center shadow-[0_8px_40px_rgba(0,0,0,0.04)]">
+            <div className="w-32 h-32 mb-8 rounded-[40px] bg-pink-100 border-4 border-pink-200 flex items-center justify-center shadow-inner transform rotate-6">
+              <span className="material-symbols-outlined text-6xl text-pink-500 font-bold">construction</span>
             </div>
-
-            <div className="grid gap-4 md:grid-cols-3">
-              {[
-                ['規劃中', '值席認證工作階段'],
-                ['下一步', 'AFTN 模板產生'],
-                ['後續', 'AIRAC 差異告警'],
-              ].map(([label, detail]) => (
-                <div key={label} className="rounded-[24px] border border-white/10 bg-white/5 p-5">
-                  <div className="text-[11px] uppercase tracking-[0.24em] text-on-surface-variant">{label}</div>
-                  <div className="mt-2 text-lg font-semibold text-on-surface">{detail}</div>
-                </div>
-              ))}
-            </div>
+            <h2 className="text-4xl md:text-5xl font-black text-on-surface">施工中喵 🐾</h2>
+            <p className="mt-6 max-w-lg text-[18px] text-slate-500 font-bold leading-relaxed">
+              作業通道正在重新裝潢中，請先使用其他可愛的儀表板功能吧！<br/><br/>未來我們會加入更多酷炫又甜美的通訊功能！✨
+            </p>
           </div>
         )}
       </Container>
