@@ -1,4 +1,5 @@
-import React, { ButtonHTMLAttributes, HTMLAttributes } from 'react';
+import React, { ButtonHTMLAttributes, HTMLAttributes, useState } from 'react';
+import type { FirContactRecord } from '../types';
 
 export const Container = ({ children, className = '', ...props }: HTMLAttributes<HTMLDivElement>) => (
   <main id="main-container" className={`relative z-10 mx-auto flex w-full max-w-[1440px] flex-1 flex-col px-4 pb-28 pt-28 md:px-8 md:pb-10 md:pt-36 lg:px-10 ${className}`} {...props}>
@@ -30,3 +31,72 @@ export const Badge = ({ children, active = false, color = 'secondary', className
     <span className="text-[14px] tracking-wide">{children}</span>
   </div>
 );
+
+interface CopyButtonProps {
+  value: string;
+  label?: string;
+  className?: string;
+}
+
+export function CopyButton({ value, label, className = '' }: CopyButtonProps) {
+  const [copied, setCopied] = useState(false);
+
+  async function handleCopy() {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1600);
+    } catch {
+      // clipboard 權限被拒時靜默失敗，使用者仍可手動選取
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={handleCopy}
+      title={`複製${label ?? ''}`}
+      className={`inline-flex items-center gap-1 rounded-xl border-2 px-2.5 py-1 text-xs font-bold transition-all active:scale-90 ${
+        copied
+          ? 'border-emerald-300 bg-emerald-50 text-emerald-600'
+          : 'border-slate-200 bg-white text-slate-400 hover:border-slate-300 hover:text-slate-600'
+      } ${className}`}
+    >
+      <span className="material-symbols-outlined text-[14px]">{copied ? 'check' : 'content_copy'}</span>
+      {copied ? '已複製' : '複製'}
+    </button>
+  );
+}
+
+interface SourceFooterProps {
+  record: Pick<FirContactRecord, 'sourceName' | 'sourceUrl' | 'sourceStatus' | 'lastValidatedAt'>;
+  className?: string;
+}
+
+/** 每張資料卡的來源驗證列：來源名稱 + 原始網址連結 + live/cache 徽章，供使用者自行查證 */
+export function SourceFooter({ record, className = '' }: SourceFooterProps) {
+  const isLive = record.sourceStatus === 'live';
+
+  return (
+    <div className={`flex items-center justify-between gap-2 border-t border-dashed border-slate-200 pt-3 text-xs ${className}`}>
+      <a
+        href={record.sourceUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        title={record.sourceName}
+        className="inline-flex min-w-0 items-center gap-1 font-bold text-slate-400 transition-colors hover:text-secondary hover:underline"
+      >
+        <span className="material-symbols-outlined shrink-0 text-[14px]">open_in_new</span>
+        <span className="truncate">{record.sourceName}</span>
+      </a>
+      <span
+        title={`最後驗證：${new Date(record.lastValidatedAt).toLocaleString()}`}
+        className={`shrink-0 rounded-full px-2.5 py-0.5 font-bold ${
+          isLive ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'
+        }`}
+      >
+        {isLive ? '即時解析' : '快取資料'}
+      </span>
+    </div>
+  );
+}

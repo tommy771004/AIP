@@ -1,15 +1,28 @@
 import React, { useMemo, useState } from 'react';
-import { ActionButton, Badge, GlassCard, GlassPanel } from '../components/StyledComponents';
-import { FACILITY_TYPE_LABELS, REGION_FLAGS, REGION_LABELS, SOURCE_STATUS_LABELS } from '../data/firSource';
-import { FirContactRecord } from '../types';
+import { CopyButton, SourceFooter } from '../components/StyledComponents';
+import { FACILITY_TYPE_LABELS, REGION_LABELS } from '../data/firSource';
+import { FacilityType, FirContactRecord } from '../types';
 
 interface RescueContactsProps {
   records: FirContactRecord[];
   isLoading: boolean;
-  onCall: () => void;
+  onCall: (record: FirContactRecord) => void;
 }
 
 const PAGE_SIZE = 6;
+
+/** 索引卡側邊色標籤：依設施類型分色 */
+const TAB_COLORS: Record<FacilityType, string> = {
+  ACC: 'bg-sky-400',
+  ARTCC: 'bg-indigo-400',
+  APP: 'bg-violet-400',
+  FIC: 'bg-cyan-400',
+  RCC: 'bg-rose-400',
+  MED: 'bg-emerald-400',
+  AFIS: 'bg-teal-400',
+  TWR: 'bg-amber-400',
+  'TWR/APP': 'bg-orange-400',
+};
 
 export default function RescueContacts({ records, isLoading, onCall }: RescueContactsProps) {
   const [selectedRegion, setSelectedRegion] = useState<string>('');
@@ -35,133 +48,143 @@ export default function RescueContacts({ records, isLoading, onCall }: RescueCon
   }
 
   return (
-    <div id="rescue-contacts-view" className="flex flex-col gap-8 w-full">
-      <GlassPanel>
-        <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <div className="text-[13px] font-black tracking-widest text-primary uppercase">Directory</div>
-            <h1 className="mt-1 text-4xl font-black text-on-surface md:text-5xl">設施通訊錄 📞</h1>
-            <p className="mt-4 max-w-2xl text-lg font-bold text-slate-400">
-              完整收錄所有 FIR 的通訊細節，輕輕一點就能展開救援協作！
-            </p>
-          </div>
+    <div id="rescue-contacts-view" className="flex w-full flex-col gap-6">
 
-          <div className="rounded-[28px] bg-primary/10 border-[3px] border-primary/20 px-8 py-5 text-[15px] font-black text-primary flex items-center gap-3">
-            <span className="material-symbols-outlined text-3xl">star</span>
-            <div>
-               已載入 <span className="text-2xl">{filtered.length}</span> 筆設施 <br/>
-               涵蓋 {availableRegions.length} 區域 🗺️
-            </div>
+      {/* 索引盒頂部：抽屜標籤列 */}
+      <header className="rounded-t-[20px] rounded-b-md border-2 border-b-4 border-[#d8e8e8] bg-[#f2f9f9] px-6 pb-5 pt-6 md:px-8">
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <div className="text-[11px] font-bold uppercase tracking-[0.3em] text-[var(--color-rolodex-tab)]">Contact Index</div>
+            <h1 className="mt-1 text-3xl font-black text-on-surface md:text-4xl">設施通訊錄</h1>
+          </div>
+          <div className="text-sm font-medium text-slate-400">
+            {filtered.length} 筆設施 · {availableRegions.length} 個區域
           </div>
         </div>
 
-        <div className="mt-8 flex flex-wrap gap-3">
+        {/* 區域索引標籤（仿索引卡突出tab） */}
+        <div className="mt-5 flex flex-wrap gap-1.5">
           <button
             onClick={() => selectRegion('')}
-            className={`rounded-[24px] border-[3px] px-6 py-3 text-[15px] font-black transition-all duration-300 ${
-              selectedRegion === '' ? 'border-primary bg-primary text-white shadow-md scale-105' : 'border-slate-100 bg-white text-slate-500 hover:border-primary/50 hover:text-primary active:scale-95'
+            className={`rounded-t-xl border-2 border-b-0 px-4 py-2 text-sm font-bold transition-colors ${
+              selectedRegion === ''
+                ? 'border-[var(--color-rolodex-tab)] bg-white text-[var(--color-rolodex-tab)]'
+                : 'border-transparent bg-[#dcecec] text-slate-500 hover:bg-white'
             }`}
           >
-            全部區域 🌟
+            全部
           </button>
           {availableRegions.map((region) => (
             <button
               key={region.code}
               onClick={() => selectRegion(region.code)}
-              className={`rounded-[24px] border-[3px] px-6 py-3 text-[15px] font-black transition-all duration-300 ${
+              className={`rounded-t-xl border-2 border-b-0 px-4 py-2 text-sm font-bold transition-colors ${
                 selectedRegion === region.code
-                  ? 'border-primary bg-primary text-white shadow-md scale-105'
-                  : 'border-slate-100 bg-white text-slate-500 hover:border-primary/50 hover:text-primary active:scale-95'
+                  ? 'border-[var(--color-rolodex-tab)] bg-white text-[var(--color-rolodex-tab)]'
+                  : 'border-transparent bg-[#dcecec] text-slate-500 hover:bg-white'
               }`}
             >
-              {REGION_FLAGS[region.code] ?? region.code} {REGION_LABELS[region.code] ?? region.code} · {region.count}
+              {REGION_LABELS[region.code] ?? region.code}
+              <span className="ml-1.5 text-xs opacity-60">{region.count}</span>
             </button>
           ))}
         </div>
-      </GlassPanel>
+      </header>
 
       {isLoading ? (
-        <div className="flex min-h-[400px] items-center justify-center rounded-[40px] border-[4px] border-dashed border-primary/30 bg-white/60 backdrop-blur-md">
-          <div className="flex flex-col items-center gap-5 text-primary">
-            <span className="material-symbols-outlined animate-spin text-[64px]">toys</span>
-            <span className="text-2xl font-black tracking-wide">正在快樂載入中... ✨</span>
+        <div className="flex min-h-[360px] items-center justify-center rounded-2xl border-2 border-dashed border-[var(--color-rolodex-tab)]/40 bg-white/60">
+          <div className="flex flex-col items-center gap-3 text-[var(--color-rolodex-tab)]">
+            <span className="material-symbols-outlined animate-spin text-5xl">cached</span>
+            <span className="text-lg font-bold">翻找名片盒中…</span>
           </div>
         </div>
       ) : (
-        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {pagedRecords.map((record) => (
-            <GlassCard key={record.id} className="flex h-full flex-col justify-between group">
+        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+          {pagedRecords.map((record, index) => (
+            <article
+              key={record.id}
+              className={`index-card relative flex h-full flex-col justify-between overflow-hidden rounded-xl border-2 border-[#e2eded] pl-6 pr-5 py-5 shadow-[0_4px_16px_rgba(127,181,181,0.15)] transition-transform hover:-translate-y-1 ${
+                index % 2 === 0 ? 'rotate-[0.4deg]' : '-rotate-[0.4deg]'
+              }`}
+            >
+              {/* 側邊色標籤 */}
+              <span className={`absolute inset-y-0 left-0 w-2 ${TAB_COLORS[record.facilityType]}`} />
+
               <div>
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <div className="text-[13px] font-black text-secondary tracking-widest uppercase">
-                      {record.firIcao} · {record.regionCode}
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="font-mono text-xs font-bold tracking-widest text-[var(--color-rolodex-tab)]">
+                      {record.firIcao} · {REGION_LABELS[record.regionCode] ?? record.regionCode}
                     </div>
-                    <h3 className="mt-1 text-2xl font-black text-on-surface line-clamp-2">{record.facilityName}</h3>
-                    <p className="mt-2 text-[15px] font-bold text-slate-400 flex items-center gap-1.5">
-                      <span className="material-symbols-outlined text-[18px]">location_on</span>
-                      {record.firName}
+                    <h3 className="mt-1 text-lg font-black leading-snug text-on-surface">{record.facilityName}</h3>
+                    <p className="mt-0.5 text-sm font-medium text-slate-400">
+                      {record.firName} · {FACILITY_TYPE_LABELS[record.facilityType]}
                     </p>
                   </div>
                 </div>
 
-                <div className="mt-6 grid grid-cols-2 gap-4 text-center">
-                  <div className="rounded-[24px] bg-slate-50 border-[3px] border-slate-100 p-4 transition-colors group-hover:border-blue-100 group-hover:bg-blue-50">
-                    <div className="text-[12px] font-black text-slate-400 uppercase tracking-wide">設施類型</div>
-                    <div className="mt-1 font-black text-on-surface text-[16px]">{FACILITY_TYPE_LABELS[record.facilityType]}</div>
+                <dl className="mt-4 space-y-2.5 text-sm">
+                  <div className="flex items-center justify-between gap-2">
+                    <dt className="shrink-0 font-bold text-slate-400">電話</dt>
+                    <dd className="flex min-w-0 items-center gap-2">
+                      <span className="truncate font-mono font-bold text-on-surface">{record.phoneNumber}</span>
+                      <CopyButton value={record.phoneNumber} label="電話" />
+                    </dd>
                   </div>
-                  <div className="rounded-[24px] bg-slate-50 border-[3px] border-slate-100 p-4 transition-colors group-hover:border-pink-100 group-hover:bg-pink-50">
-                    <div className="text-[12px] font-black text-slate-400 uppercase tracking-wide">目前 AIRAC</div>
-                    <div className="mt-1 font-black text-on-surface text-[16px]">{record.airacCycle}</div>
+                  {record.faxNumber && (
+                    <div className="flex items-center justify-between gap-2">
+                      <dt className="shrink-0 font-bold text-slate-400">傳真</dt>
+                      <dd className="font-mono font-bold text-on-surface">{record.faxNumber}</dd>
+                    </div>
+                  )}
+                  <div className="flex items-center justify-between gap-2">
+                    <dt className="shrink-0 font-bold text-slate-400">AFTN</dt>
+                    <dd className="flex items-center gap-2">
+                      <span className="font-mono font-bold text-sky-600">{record.aftnAddress}</span>
+                      <CopyButton value={record.aftnAddress} label="AFTN" />
+                    </dd>
                   </div>
-                </div>
-
-                <div className="mt-6 flex flex-col gap-3">
-                  <div className="flex items-center justify-between rounded-[24px] bg-blue-50 px-5 py-4 border-[3px] border-blue-100 group-hover:border-blue-200">
-                    <span className="text-[15px] font-black text-blue-400">AFTN</span>
-                    <span className="font-black text-blue-600 text-lg">{record.aftnAddress}</span>
+                  <div className="flex items-center justify-between gap-2">
+                    <dt className="shrink-0 font-bold text-slate-400">頻率</dt>
+                    <dd className="truncate font-mono text-xs font-bold text-slate-500">{record.vhfFreq.join(' / ')}</dd>
                   </div>
-                  <div className="flex items-center justify-between rounded-[24px] bg-pink-50 px-5 py-4 border-[3px] border-pink-100 group-hover:border-pink-200">
-                    <span className="text-[15px] font-black text-pink-400">電話</span>
-                    <span className="font-black text-pink-600 text-lg">{record.phoneNumber}</span>
-                  </div>
-                </div>
+                </dl>
               </div>
 
-              <div className="mt-8 pt-2">
-                <ActionButton
-                  onClick={onCall}
-                  className="bg-primary text-white hover:bg-pink-400 text-lg"
+              <div className="mt-5">
+                <button
+                  onClick={() => onCall(record)}
+                  className="w-full rounded-xl bg-[var(--color-rolodex-tab)] py-3 text-sm font-black text-white transition-colors hover:bg-teal-500 active:scale-[0.98]"
                 >
-                  <span className="material-symbols-outlined text-[24px]">perm_phone_msg</span>
-                  一鍵轉接 🚀
-                </ActionButton>
+                  開啟緊急聯絡卡
+                </button>
+                <SourceFooter record={record} className="mt-4" />
               </div>
-            </GlassCard>
+            </article>
           ))}
         </div>
       )}
 
       {!isLoading && totalPages > 1 && (
-        <div className="flex flex-wrap items-center justify-center gap-5 mt-6">
+        <nav className="mt-2 flex items-center justify-center gap-4">
           <button
             onClick={() => setPage((current) => Math.max(1, current - 1))}
             disabled={page === 1}
-            className="flex h-14 w-14 items-center justify-center rounded-full bg-white border-[3px] border-slate-100 text-slate-500 shadow-sm hover:border-primary hover:text-primary hover:scale-110 disabled:opacity-40 disabled:hover:border-slate-100 disabled:hover:scale-100 disabled:hover:text-slate-500 disabled:cursor-not-allowed transition-all"
+            className="flex h-11 w-11 items-center justify-center rounded-full border-2 border-[#d8e8e8] bg-white text-slate-500 transition-colors hover:border-[var(--color-rolodex-tab)] hover:text-[var(--color-rolodex-tab)] disabled:cursor-not-allowed disabled:opacity-40"
           >
-            <span className="material-symbols-outlined text-3xl">chevron_left</span>
+            <span className="material-symbols-outlined">chevron_left</span>
           </button>
-          <div className="rounded-[28px] bg-white border-[3px] border-slate-100 px-8 py-4 text-[16px] font-black text-slate-400 shadow-sm">
-            第 <span className="text-primary text-xl px-1">{page}</span> 頁，共 <span className="text-on-surface px-1">{totalPages}</span> 頁 🍰
-          </div>
+          <span className="text-sm font-bold text-slate-500">
+            第 {page} / {totalPages} 頁
+          </span>
           <button
             onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
             disabled={page === totalPages}
-            className="flex h-14 w-14 items-center justify-center rounded-full bg-white border-[3px] border-slate-100 text-slate-500 shadow-sm hover:border-primary hover:text-primary hover:scale-110 disabled:opacity-40 disabled:hover:border-slate-100 disabled:hover:scale-100 disabled:hover:text-slate-500 disabled:cursor-not-allowed transition-all"
+            className="flex h-11 w-11 items-center justify-center rounded-full border-2 border-[#d8e8e8] bg-white text-slate-500 transition-colors hover:border-[var(--color-rolodex-tab)] hover:text-[var(--color-rolodex-tab)] disabled:cursor-not-allowed disabled:opacity-40"
           >
-            <span className="material-symbols-outlined text-3xl">chevron_right</span>
+            <span className="material-symbols-outlined">chevron_right</span>
           </button>
-        </div>
+        </nav>
       )}
     </div>
   );

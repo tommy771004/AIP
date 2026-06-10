@@ -1,4 +1,4 @@
-import { ActiveIncident, FacilityType, RegionMapConfig } from '../types';
+import { FacilityType, RegionMapConfig } from '../types';
 
 export const REGION_LABELS: Record<string, string> = {
   TW: '台灣',
@@ -11,6 +11,7 @@ export const REGION_LABELS: Record<string, string> = {
   CA: '加拿大',
   BR: '巴西',
   EU: '歐洲',
+  NZ: '紐西蘭',
 };
 
 export const REGION_FLAGS: Record<string, string> = {
@@ -24,6 +25,7 @@ export const REGION_FLAGS: Record<string, string> = {
   CA: 'CA',
   BR: 'BR',
   EU: 'EU',
+  NZ: 'NZ',
 };
 
 export const REGION_MAP_CONFIG: Record<string, RegionMapConfig> = {
@@ -97,6 +99,13 @@ export const REGION_MAP_CONFIG: Record<string, RegionMapConfig> = {
     accentClass: 'from-fuchsia-200 via-violet-200 to-indigo-300',
     haloClass: 'bg-violet-400/25',
   },
+  NZ: {
+    top: '78%',
+    left: '74%',
+    shortName: '紐西蘭',
+    accentClass: 'from-teal-200 via-emerald-300 to-cyan-300',
+    haloClass: 'bg-teal-400/25',
+  },
 };
 
 export const FACILITY_TYPE_LABELS: Record<FacilityType, string> = {
@@ -115,13 +124,3 @@ export const SOURCE_STATUS_LABELS = {
   live: '即時',
   cache: '快取',
 } as const;
-
-export const MOCK_INCIDENT: ActiveIncident = {
-  id: 'INC-2026-0610',
-  etaMinutes: 4,
-  operator: {
-    id: 'OP-001',
-    name: '林怡君',
-    role: '飛航情報協調席主管',
-  },
-};

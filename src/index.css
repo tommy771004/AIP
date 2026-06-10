@@ -6,14 +6,31 @@
   --color-surface: #ffffff;
   --color-on-surface: #4a4e69;
   --color-on-surface-variant: #9ca3af;
-  
+
   --color-primary: #ff9aab;
   --color-on-primary: #ffffff;
   --color-secondary: #a0c4ff;
   --color-on-secondary: #ffffff;
   --color-tertiary: #b9fbc0;
 
+  /* 各 view 的簽名色：同一粉彩家族、不同性格 */
+  --color-bento-cream: #fff8e7;
+  --color-poster-paper: #faf3e3;
+  --color-poster-ink: #4f6d7a;
+  --color-poster-stamp: #c96f4a;
+  --color-rolodex-tab: #7fb5b5;
+  --color-alert-orange: #ff7849;
+  --color-alert-deep: #2d2a3e;
+  --color-note-paper: #fdfbf3;
+  --color-note-line: #c9e4f6;
+
   --font-sans: "Quicksand", ui-sans-serif, system-ui, sans-serif;
+
+  /* 圓角級距：sm 12 / md 20 / lg 28 / xl 40 — 各 view 取不同級距，不再統一 40 */
+  --radius-cute-sm: 12px;
+  --radius-cute-md: 20px;
+  --radius-cute-lg: 28px;
+  --radius-cute-xl: 40px;
 }
 
 @layer base {
@@ -99,5 +116,69 @@
     background: linear-gradient(110deg, #ffe5ec 8%, #ffc2d1 18%, #ffe5ec 33%);
     background-size: 200% 100%;
     animation: shimmer-fast 1.5s linear infinite;
+  }
+
+  /* ── 區域圖：復古航空海報 ── */
+  .texture-paper {
+    background-color: var(--color-poster-paper);
+    background-image:
+      radial-gradient(rgba(79, 109, 122, 0.08) 1px, transparent 1px),
+      radial-gradient(rgba(201, 111, 74, 0.05) 1px, transparent 1px);
+    background-size: 22px 22px, 34px 34px;
+    background-position: 0 0, 11px 11px;
+  }
+
+  .stamp-edge {
+    border: 3px dashed rgba(79, 109, 122, 0.35);
+    outline: 6px solid var(--color-surface);
+    outline-offset: -2px;
+  }
+
+  /* ── 聯絡表：索引名片盒 ── */
+  .index-card {
+    background-color: #fffefa;
+    background-image: repeating-linear-gradient(transparent, transparent 27px, rgba(127, 181, 181, 0.18) 28px);
+  }
+
+  /* ── 作業簿：手帳格線紙 ── */
+  .grid-paper {
+    background-color: var(--color-note-paper);
+    background-image:
+      linear-gradient(rgba(201, 228, 246, 0.55) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(201, 228, 246, 0.55) 1px, transparent 1px);
+    background-size: 26px 26px;
+  }
+
+  .sticky-note {
+    box-shadow: 0 10px 24px rgba(74, 78, 105, 0.12), 0 2px 4px rgba(74, 78, 105, 0.06);
+  }
+
+  .sticky-note::before {
+    content: '';
+    position: absolute;
+    top: -10px;
+    left: 50%;
+    transform: translateX(-50%) rotate(-2deg);
+    width: 84px;
+    height: 22px;
+    background: rgba(255, 234, 172, 0.85);
+    border-left: 1px dashed rgba(74, 78, 105, 0.15);
+    border-right: 1px dashed rgba(74, 78, 105, 0.15);
+  }
+
+  /* ── 緊急面板：警示斜紋 ── */
+  .hazard-stripes {
+    background-image: repeating-linear-gradient(
+      -45deg,
+      var(--color-alert-orange),
+      var(--color-alert-orange) 16px,
+      var(--color-alert-deep) 16px,
+      var(--color-alert-deep) 32px
+    );
+  }
+
+  /* ── 總覽 bento：貼紙徽章 ── */
+  .sticker {
+    box-shadow: 0 2px 0 rgba(255, 255, 255, 0.9) inset, 0 6px 16px rgba(74, 78, 105, 0.12);
   }
 }

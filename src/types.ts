@@ -50,18 +50,6 @@ export interface ApiResponse<T> {
   data: T;
 }
 
-export interface OperatorDetails {
-  id: string;
-  name: string;
-  role: string;
-}
-
-export interface ActiveIncident {
-  id: string;
-  etaMinutes: number;
-  operator: OperatorDetails;
-}
-
 export interface FirCluster {
   firIcao: string;
   firName: string;

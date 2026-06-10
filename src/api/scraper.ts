@@ -1,5 +1,6 @@
 import axios from 'axios';
 import * as cheerio from 'cheerio';
+import { PDFParse } from 'pdf-parse';
 import type {
   FacilityType,
   FirContactRecord,
@@ -31,21 +32,24 @@ interface ContactSeed {
   sourceName: string;
   sourceUrl: string;
   sourceVerified: boolean;
+  /** true = 聯絡欄位確實從來源即時解析；false/省略 = 硬編碼種子（sourceStatus 標 cache） */
+  fieldsParsed?: boolean;
 }
 
 export const SCRAPER_SOURCES: Record<string, ScraperSourceDefinition> = {
   TAIWAN: {
     name: '台灣民航局飛航服務總台 eAIP',
-    url: 'https://eaip.caa.gov.tw/',
-    fallbackGen33Url: 'https://eaip.caa.gov.tw/',
+    url: 'https://ais.caa.gov.tw/eaip/',
+    fallbackGen33Url: 'https://ais.caa.gov.tw/eaip/',
     regionCode: 'TW',
     firName: 'Taipei FIR',
-    firIcao: 'RCTP',
+    firIcao: 'RCAA',
   },
   JAPAN: {
-    name: '日本 AIS Japan',
-    url: 'https://aisjapan.mlit.go.jp/',
-    fallbackGen33Url: 'https://aisjapan.mlit.go.jp/',
+    // AIS Japan (aisjapan.mlit.go.jp) 已於 2026-03-10 停止服務，eAIP 遷移至 SWIM Portal
+    name: '日本 SWIM Portal（eAIP Japan）',
+    url: 'https://top.swim.mlit.go.jp/swim/',
+    fallbackGen33Url: 'https://top.swim.mlit.go.jp/swim/',
     regionCode: 'JP',
     firName: 'Fukuoka FIR',
     firIcao: 'RJJJ',
@@ -67,12 +71,13 @@ export const SCRAPER_SOURCES: Record<string, ScraperSourceDefinition> = {
     firIcao: 'EGTT',
   },
   SINGAPORE: {
-    name: '新加坡 CAAS eAIP',
-    url: 'https://aip.caas.gov.sg/',
-    fallbackGen33Url: 'https://aip.caas.gov.sg/aip/eAIP/',
+    // 舊站 aip.caas.gov.sg 已下線，遷移至 AIM-SG 入口
+    name: '新加坡 CAAS AIM-SG eAIP',
+    url: 'https://aim-sg.caas.gov.sg/',
+    fallbackGen33Url: 'https://aim-sg.caas.gov.sg/aip/',
     regionCode: 'SG',
     firName: 'Singapore FIR',
-    firIcao: 'WSSS',
+    firIcao: 'WSJC',
   },
   HONG_KONG: {
     name: '香港 CAD AIS',
@@ -96,7 +101,15 @@ export const SCRAPER_SOURCES: Record<string, ScraperSourceDefinition> = {
     fallbackGen33Url: 'https://aisweb.decea.mil.br/',
     regionCode: 'BR',
     firName: 'Brasilia FIR',
-    firIcao: 'SBBR',
+    firIcao: 'SBBS',
+  },
+  NEW_ZEALAND: {
+    name: '紐西蘭 Airways AIP New Zealand',
+    url: 'https://www.aip.net.nz/',
+    fallbackGen33Url: 'https://www.aip.net.nz/assets/AIP/General-GEN/3-SERVICES/GEN_3.3.pdf',
+    regionCode: 'NZ',
+    firName: 'New Zealand FIR',
+    firIcao: 'NZZC',
   },
   EUROCONTROL: {
     name: '歐洲 Eurocontrol EAD Basic',
@@ -120,15 +133,17 @@ export const SCRAPER_SOURCES: Record<string, ScraperSourceDefinition> = {
     fallbackGen33Url: 'https://skyvector.com/airport/RCTP/Taiwan-Taoyuan-International-Airport',
     regionCode: 'TW',
     firName: 'Taipei FIR',
-    firIcao: 'RCTP',
+    firIcao: 'RCAA',
   },
 };
 
 function buildRecord(seed: ContactSeed): FirContactRecord {
+  const { fieldsParsed, ...rest } = seed;
   return {
-    ...seed,
+    ...rest,
     airacCycle: getCurrentAiracDate(),
-    sourceStatus: seed.sourceVerified ? 'live' : 'cache',
+    // live 只代表「欄位真的從來源解析出來」；入口頁可達但用種子資料 → cache
+    sourceStatus: fieldsParsed ? 'live' : 'cache',
     lastValidatedAt: new Date().toISOString(),
   };
 }
@@ -239,6 +254,80 @@ async function resolveUkGen33Url() {
   };
 }
 
+interface ParsedAccContact {
+  phoneNumber?: string;
+  faxNumber?: string;
+  aftnAddress?: string;
+}
+
+function normalizeUkPhone(raw: string) {
+  const digits = raw.replace(/\D/g, '');
+  if (!digits.startsWith('0')) return raw.trim();
+  return `+44-${digits.slice(1, 5)}-${digits.slice(5)}`;
+}
+
+/**
+ * 解析 UK eAIP GEN 3.3 的 ATS Unit Address 表格。
+ * 欄位結構：Name | Postal Address | Tel | Fax | Telex | AFS(AFTN)，
+ * 子列（Watch Supervisor 等）會重複設施名，只取每個設施的第一筆完整列。
+ */
+function parseUkAccContacts(html: string): { london?: ParsedAccContact; scottish?: ParsedAccContact } {
+  const $ = cheerio.load(html);
+  const result: { london?: ParsedAccContact; scottish?: ParsedAccContact } = {};
+
+  $('tr').each((_, row) => {
+    const rowText = sanitizeText($(row).text());
+    // 注意：不能用 Swanwick/Prestwick 當關鍵字——London Terminal Control 也在 Swanwick，會誤中
+    const target = /London\s+(Area\s+Control|AC\b)/i.test(rowText)
+      ? 'london'
+      : /Scottish\s+(AC\b|Area\s+Control)/i.test(rowText)
+        ? 'scottish'
+        : null;
+
+    if (!target || result[target]) return;
+
+    const aftnMatch = rowText.match(/\bEG[A-Z]{6}\b/);
+    const phones = rowText.match(/\b0\d{3,4}[-\s]?\d{6,7}\b/g) ?? [];
+    if (!aftnMatch || phones.length === 0) return;
+
+    result[target] = {
+      phoneNumber: normalizeUkPhone(phones[0]),
+      faxNumber: phones[1] ? normalizeUkPhone(phones[1]) : undefined,
+      aftnAddress: aftnMatch[0],
+    };
+  });
+
+  return result;
+}
+
+/** 解析 AIP New Zealand GEN 3.3 PDF（Table GEN 3.3-2 ATS Unit Address List）的 Christchurch ACC 列 */
+async function parseNzChristchurchContact(pdfBuffer: Buffer): Promise<ParsedAccContact | null> {
+  const parser = new PDFParse({ data: pdfBuffer });
+  let text = '';
+  try {
+    const result = await parser.getText();
+    text = result.text;
+  } finally {
+    await parser.destroy();
+  }
+
+  const anchor = text.indexOf('Christchurch');
+  if (anchor === -1) return null;
+
+  const windowText = text.slice(anchor, anchor + 800).replace(/\s+/g, ' ');
+  const phones = windowText.match(/\(0?3\)\s*\d{3}[\s-]?\d{4}/g) ?? [];
+  const aftnMatch = windowText.match(/\bNZ[A-Z]{6}\b/);
+  if (phones.length === 0 && !aftnMatch) return null;
+
+  const toIntl = (raw: string) => `+64-3-${raw.replace(/\(0?3\)/, '').replace(/\D/g, '').replace(/^(\d{3})(\d{4})$/, '$1-$2')}`;
+
+  return {
+    phoneNumber: phones[0] ? toIntl(phones[0]) : undefined,
+    faxNumber: phones[1] ? toIntl(phones[1]) : undefined,
+    aftnAddress: aftnMatch?.[0],
+  };
+}
+
 export function getCurrentAiracDate(): string {
   const epoch = new Date('2024-01-25T00:00:00Z');
   const now = new Date();
@@ -309,26 +398,28 @@ async function scrapeTaiwanANWS(): Promise<FirContactRecord[]> {
     const page = await fetchPage(url);
     const bodyText = sanitizeText(cheerio.load(page.data)('body').text());
     const phoneMatch = bodyText.match(/\+886[-\s]?\d[\d\s-]{6,16}/);
+    const taiwanFieldsParsed = Boolean(phoneMatch);
 
     return [
       buildRecord({
-        id: 'RCTP-ACC',
-        firIcao: 'RCTP',
+        id: 'RCAA-ACC',
+        firIcao: 'RCAA',
         firName: 'Taipei FIR',
         regionCode: source.regionCode,
         facilityName: 'Taipei Area Control Center',
         facilityType: 'ACC',
         phoneNumber: phoneMatch?.[0]?.trim() ?? '+886-3-398-2210',
         faxNumber: '+886-3-398-2220',
-        aftnAddress: 'RCTPZQZX',
+        aftnAddress: 'RCAAZQZX',
         vhfFreq: ['121.5 MHz', '125.1 MHz'],
         sourceName: source.name,
         sourceUrl: url,
         sourceVerified: sourceVerified && page.status < 400,
+        fieldsParsed: taiwanFieldsParsed,
       }),
       buildRecord({
-        id: 'RCTP-RCC',
-        firIcao: 'RCTP',
+        id: 'RCAA-RCC',
+        firIcao: 'RCAA',
         firName: 'Taipei FIR',
         regionCode: source.regionCode,
         facilityName: 'Taiwan RCC',
@@ -344,23 +435,23 @@ async function scrapeTaiwanANWS(): Promise<FirContactRecord[]> {
   } catch {
     return [
       buildRecord({
-        id: 'RCTP-ACC-CACHE',
-        firIcao: 'RCTP',
+        id: 'RCAA-ACC-CACHE',
+        firIcao: 'RCAA',
         firName: 'Taipei FIR',
         regionCode: source.regionCode,
         facilityName: 'Taipei Area Control Center',
         facilityType: 'ACC',
         phoneNumber: '+886-3-398-2210',
         faxNumber: '+886-3-398-2220',
-        aftnAddress: 'RCTPZQZX',
+        aftnAddress: 'RCAAZQZX',
         vhfFreq: ['121.5 MHz', '125.1 MHz'],
         sourceName: `${source.name}（離線快取）`,
         sourceUrl: source.url,
         sourceVerified: false,
       }),
       buildRecord({
-        id: 'RCTP-RCC-CACHE',
-        firIcao: 'RCTP',
+        id: 'RCAA-RCC-CACHE',
+        firIcao: 'RCAA',
         firName: 'Taipei FIR',
         regionCode: source.regionCode,
         facilityName: 'Taiwan RCC',
@@ -403,43 +494,84 @@ async function scrapeJapanJCAB(): Promise<FirContactRecord[]> {
       sourceUrl: source.url,
       sourceVerified,
     }),
-    buildRecord({
-      id: 'RJDG-ACC',
-      firIcao: 'RJDG',
-      firName: 'Tokyo FIR',
-      regionCode: source.regionCode,
-      facilityName: 'Tokyo Area Control Centre',
-      facilityType: 'ACC',
-      phoneNumber: '+81-47-634-7600',
-      faxNumber: '+81-47-634-7610',
-      aftnAddress: 'RJTGZQZX',
-      vhfFreq: ['132.8 MHz', '118.7 MHz'],
-      sourceName: `${source.name}（已發布 AIP 資料）`,
-      sourceUrl: source.url,
-      sourceVerified,
-    }),
+    // 注意：Tokyo FIR 已於 2006 年併入 Fukuoka FIR (RJJJ)，日本全境為單一 FIR
   ];
+}
+
+function normalizeSgPhone(raw: string) {
+  const digits = raw.replace(/\D/g, '').replace(/^65/, '');
+  return `+65-${digits.slice(0, 4)}-${digits.slice(4)}`;
+}
+
+/** 解析 Singapore eAIP GEN 3.3 的 ATS unit address 表格（Unit | Postal | Tel | Fax | Telex | AFS） */
+function parseSgAccContact(html: string): ParsedAccContact | null {
+  const $ = cheerio.load(html);
+  let parsed: ParsedAccContact | null = null;
+
+  $('tr').each((_, row) => {
+    if (parsed) return;
+    const rowText = sanitizeText($(row).text());
+    if (!/SINGAPORE\s+ACC/i.test(rowText)) return;
+
+    const aftnMatch = rowText.match(/\bWS[A-Z]{6}\b/);
+    const phones = rowText.match(/\(65\)\s*\d{8}/g) ?? [];
+    if (!aftnMatch || phones.length === 0) return;
+
+    parsed = {
+      phoneNumber: normalizeSgPhone(phones[0]),
+      faxNumber: phones[1] ? normalizeSgPhone(phones[1]) : undefined,
+      aftnAddress: aftnMatch[0],
+    };
+  });
+
+  return parsed;
 }
 
 async function scrapeSingaporeCaas(): Promise<FirContactRecord[]> {
   const source = SCRAPER_SOURCES.SINGAPORE;
-  const { sourceVerified, sourceUrl } = await probeSource(source);
+  let parsed: ParsedAccContact | null = null;
+  let sourceVerified = false;
+  let sourceUrl = source.fallbackGen33Url;
+
+  try {
+    // 依規格不寫死最終頁：入口頁找 current eAIP index，再導向 GEN 3.3
+    const landing = await fetchPage(source.fallbackGen33Url);
+    sourceVerified = landing.status < 400;
+
+    const indexUrl = findFirstLink(
+      landing.data,
+      source.fallbackGen33Url,
+      (href) => href.includes('html/index-en-GB.html')
+    );
+
+    if (indexUrl) {
+      const gen33Url = indexUrl.replace('index-en-GB.html', 'eAIP/SG-GEN-3.3-en-GB.html');
+      const page = await fetchPage(gen33Url);
+      if (page.status < 400) {
+        parsed = parseSgAccContact(page.data);
+        if (parsed) sourceUrl = gen33Url;
+      }
+    }
+  } catch {
+    sourceVerified = false;
+  }
 
   return [
     buildRecord({
-      id: 'WSSS-ACC',
-      firIcao: 'WSSS',
+      id: 'WSJC-ACC',
+      firIcao: 'WSJC',
       firName: 'Singapore FIR',
       regionCode: source.regionCode,
-      facilityName: 'Singapore Area Control Centre',
+      facilityName: 'Singapore Area Control Centre (SATCC)',
       facilityType: 'ACC',
-      phoneNumber: '+65-6541-2301',
-      faxNumber: '+65-6542-0220',
-      aftnAddress: 'WSSSZQZX',
+      phoneNumber: parsed?.phoneNumber ?? '+65-6541-2668',
+      faxNumber: parsed?.faxNumber ?? '+65-6545-7526',
+      aftnAddress: parsed?.aftnAddress ?? 'WSJCZQZX',
       vhfFreq: ['125.25 MHz', '128.6 MHz'],
-      sourceName: `${source.name}（iframe 導航策略）`,
+      sourceName: source.name,
       sourceUrl,
       sourceVerified,
+      fieldsParsed: Boolean(parsed),
     }),
   ];
 }
@@ -504,34 +636,78 @@ async function scrapeCanadaNav(): Promise<FirContactRecord[]> {
   ];
 }
 
+async function scrapeNewZealandAirways(): Promise<FirContactRecord[]> {
+  const source = SCRAPER_SOURCES.NEW_ZEALAND;
+  const pdfUrl = source.fallbackGen33Url;
+
+  let parsed: ParsedAccContact | null = null;
+  let sourceVerified = false;
+
+  try {
+    const response = await axios.get<ArrayBuffer>(pdfUrl, {
+      timeout: 15000,
+      responseType: 'arraybuffer',
+      headers: { 'User-Agent': 'Mozilla/5.0 (AIP Ops Bot)' },
+      validateStatus: (status) => status < 500,
+    });
+
+    sourceVerified = response.status < 400;
+    if (sourceVerified) {
+      parsed = await parseNzChristchurchContact(Buffer.from(response.data));
+    }
+  } catch {
+    sourceVerified = false;
+  }
+
+  return [
+    // 種子值出自 AIP New Zealand GEN 3.3 Table 3.3-2（ATS Unit Address List）
+    buildRecord({
+      id: 'NZZC-ACC',
+      firIcao: 'NZZC',
+      firName: 'New Zealand FIR',
+      regionCode: source.regionCode,
+      facilityName: 'Christchurch Area Control Centre',
+      facilityType: 'ACC',
+      phoneNumber: parsed?.phoneNumber ?? '+64-3-358-1694',
+      faxNumber: parsed?.faxNumber ?? '+64-3-358-1691',
+      aftnAddress: parsed?.aftnAddress ?? 'NZZCZQZX',
+      vhfFreq: ['121.5 MHz'],
+      sourceName: `${source.name}（GEN 3.3 官方 PDF）`,
+      sourceUrl: pdfUrl,
+      sourceVerified,
+      fieldsParsed: Boolean(parsed),
+    }),
+  ];
+}
+
 async function scrapeBrazilDecea(): Promise<FirContactRecord[]> {
   const source = SCRAPER_SOURCES.BRAZIL;
   const { sourceVerified, sourceUrl } = await probeSource(source);
 
   return [
     buildRecord({
-      id: 'SBBR-ACC',
-      firIcao: 'SBBR',
+      id: 'SBBS-ACC',
+      firIcao: 'SBBS',
       firName: 'Brasilia FIR',
       regionCode: source.regionCode,
       facilityName: 'Brasilia ACC',
       facilityType: 'ACC',
       phoneNumber: '+55-61-3364-9000',
-      aftnAddress: 'SBBRZQZX',
+      aftnAddress: 'SBBSZQZX',
       vhfFreq: ['126.45 MHz', '127.1 MHz'],
       sourceName: `${source.name}（AIP Brasil 入口）`,
       sourceUrl,
       sourceVerified,
     }),
     buildRecord({
-      id: 'SBRE-ACC',
-      firIcao: 'SBRE',
+      id: 'SBAO-ACC',
+      firIcao: 'SBAO',
       firName: 'Atlantico FIR',
       regionCode: source.regionCode,
       facilityName: 'Atlantico ACC',
       facilityType: 'ACC',
       phoneNumber: '+55-81-2129-8400',
-      aftnAddress: 'SBREZQZX',
+      aftnAddress: 'SBAOZQZX',
       vhfFreq: ['127.85 MHz', '128.9 MHz'],
       sourceName: `${source.name}（AIP Brasil 入口）`,
       sourceUrl,
@@ -670,7 +846,8 @@ async function scrapeUKEAip(): Promise<FirContactRecord[]> {
 
   try {
     const { url, sourceVerified } = await resolveUkGen33Url();
-    await fetchPage(url);
+    const page = await fetchPage(url);
+    const parsed = page.status < 400 ? parseUkAccContacts(page.data) : {};
 
     return [
       buildRecord({
@@ -680,12 +857,14 @@ async function scrapeUKEAip(): Promise<FirContactRecord[]> {
         regionCode: source.regionCode,
         facilityName: 'London Area Control Centre (Swanwick)',
         facilityType: 'ACC',
-        phoneNumber: '+44-1489-612000',
-        aftnAddress: 'EGTTZRZX',
+        phoneNumber: parsed.london?.phoneNumber ?? '+44-1489-612000',
+        faxNumber: parsed.london?.faxNumber,
+        aftnAddress: parsed.london?.aftnAddress ?? 'EGTTZRZO',
         vhfFreq: ['135.58 MHz', '118.825 MHz'],
         sourceName: source.name,
         sourceUrl: url,
         sourceVerified,
+        fieldsParsed: Boolean(parsed.london),
       }),
       buildRecord({
         id: 'EGPX-ACC',
@@ -694,12 +873,14 @@ async function scrapeUKEAip(): Promise<FirContactRecord[]> {
         regionCode: source.regionCode,
         facilityName: 'Scottish Area Control Centre (Prestwick)',
         facilityType: 'ACC',
-        phoneNumber: '+44-1292-692000',
-        aftnAddress: 'EGPXZRZX',
+        phoneNumber: parsed.scottish?.phoneNumber ?? '+44-1292-479800',
+        faxNumber: parsed.scottish?.faxNumber,
+        aftnAddress: parsed.scottish?.aftnAddress ?? 'EGPXZRZX',
         vhfFreq: ['119.53 MHz', '118.425 MHz'],
         sourceName: source.name,
         sourceUrl: url,
         sourceVerified,
+        fieldsParsed: Boolean(parsed.scottish),
       }),
     ];
   } catch {
@@ -712,7 +893,7 @@ async function scrapeUKEAip(): Promise<FirContactRecord[]> {
         facilityName: 'London Area Control Centre (Swanwick)',
         facilityType: 'ACC',
         phoneNumber: '+44-1489-612000',
-        aftnAddress: 'EGTTZRZX',
+        aftnAddress: 'EGTTZRZO',
         vhfFreq: ['135.58 MHz', '118.825 MHz'],
         sourceName: `${source.name}（離線快取）`,
         sourceUrl: source.url,
@@ -813,7 +994,7 @@ async function scrapeSkyvector(): Promise<FirContactRecord[]> {
     return [
       buildRecord({
         id: 'RCTP-APP',
-        firIcao: 'RCTP',
+        firIcao: 'RCAA',
         firName: 'Taipei FIR',
         regionCode: source.regionCode,
         facilityName: 'Taipei Approach',
@@ -830,7 +1011,7 @@ async function scrapeSkyvector(): Promise<FirContactRecord[]> {
     return [
       buildRecord({
         id: 'RCTP-APP-CACHE',
-        firIcao: 'RCTP',
+        firIcao: 'RCAA',
         firName: 'Taipei FIR',
         regionCode: source.regionCode,
         facilityName: 'Taipei Approach',
@@ -863,6 +1044,7 @@ export async function getFirContactsPaginated(options: GetContactsOptions = {}):
     scrapeAustraliaAirservices(),
     scrapeUKEAip(),
     scrapeCanadaNav(),
+    scrapeNewZealandAirways(),
     scrapeBrazilDecea(),
     scrapeEurocontrolEad(),
     scrapeFaaNasr(),
@@ -923,8 +1105,8 @@ export async function getFirContacts(): Promise<FirContactRecord[]> {
 function getFallbackContacts(): FirContactRecord[] {
   return [
     buildRecord({
-      id: 'RCTP-FALLBACK',
-      firIcao: 'RCTP',
+      id: 'RCAA-FALLBACK',
+      firIcao: 'RCAA',
       firName: 'Taipei FIR',
       regionCode: SCRAPER_SOURCES.TAIWAN.regionCode,
       facilityName: 'Taiwan RCC',

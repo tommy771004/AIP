@@ -68,7 +68,6 @@ export default function Navigation({ activeTab, onTabChange, facilityCount, heal
               title="Aero 航空小幫手"
             >
               <span className="text-2xl drop-shadow-sm transition-transform group-hover:rotate-12 group-hover:scale-110">🐾</span>
-              <div className="absolute -top-1 -right-1 h-3.5 w-3.5 rounded-full bg-red-400 border-2 border-white animate-pulse"></div>
             </button>
           </div>
         </div>

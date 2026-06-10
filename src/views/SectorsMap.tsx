@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { GlassPanel } from '../components/StyledComponents';
+import { SourceFooter } from '../components/StyledComponents';
 import { REGION_LABELS, REGION_MAP_CONFIG } from '../data/firSource';
 import { buildRegionSummaries } from '../lib/firAnalytics';
 import { FirCluster } from '../types';
@@ -18,129 +18,128 @@ export default function SectorsMap({ firClusters, isLoading }: SectorsMapProps) 
   );
 
   const activeCluster = firClusters.find((cluster) => cluster.firIcao === selectedFir) ?? firClusters[0];
+  const leadFacility = activeCluster?.facilities[0];
 
   return (
-    <div id="sectors-map-view" className="grid gap-6 xl:grid-cols-[380px_1fr] w-full">
-      <GlassPanel className="h-fit flex flex-col gap-4">
-        <div className="flex items-center justify-between">
+    <div id="sectors-map-view" className="grid w-full gap-6 xl:grid-cols-[360px_1fr]">
+
+      {/* 側欄：航班看板式清單 */}
+      <aside className="texture-paper h-fit rounded-[20px] border-2 border-[#e3d5bb] p-6 shadow-[0_6px_24px_rgba(79,109,122,0.12)]">
+        <div className="flex items-center justify-between border-b-2 border-dashed border-[#cdbb98] pb-4">
           <div>
-            <div className="text-[13px] font-black tracking-widest text-primary uppercase">Coverage</div>
-            <h2 className="mt-1 text-3xl font-black text-on-surface">控制矩陣 🗺️</h2>
+            <div className="text-[11px] font-bold uppercase tracking-[0.25em] text-[var(--color-poster-stamp)]">Flight Information Regions</div>
+            <h2 className="mt-1 font-mono text-2xl font-bold uppercase tracking-wide text-[var(--color-poster-ink)]">航區看板</h2>
           </div>
-          {isLoading && <span className="material-symbols-outlined animate-spin text-primary text-4xl">toys</span>}
+          {isLoading && <span className="material-symbols-outlined animate-spin text-2xl text-[var(--color-poster-stamp)]">flight</span>}
         </div>
 
-        <div className="mt-4 space-y-4 max-h-[600px] overflow-y-auto pr-2 pb-2">
+        <div className="mt-4 max-h-[560px] space-y-2 overflow-y-auto pr-1">
           {firClusters.map((cluster) => {
             const isActive = cluster.firIcao === activeCluster?.firIcao;
             return (
               <button
                 key={cluster.firIcao}
                 onClick={() => setSelectedFir(cluster.firIcao)}
-                className={`w-full rounded-[32px] border-[3px] px-6 py-5 text-left transition-all duration-300 ${
+                className={`group flex w-full items-center justify-between gap-3 rounded-xl px-4 py-3 text-left font-mono transition-all ${
                   isActive
-                    ? 'border-primary bg-primary/5 shadow-md scale-[1.02]'
-                    : 'border-slate-100 bg-white hover:border-primary/40 hover:-translate-y-1 shadow-sm'
+                    ? 'bg-[var(--color-poster-ink)] text-[#faf3e3] shadow-md'
+                    : 'text-[var(--color-poster-ink)] hover:bg-[#f0e6cf]'
                 }`}
               >
-                <div className="flex items-center justify-between gap-4">
-                  <div>
-                    <div className={`text-sm font-black ${isActive ? 'text-primary' : 'text-secondary'}`}>{cluster.firIcao}</div>
-                    <div className="mt-1 text-xl font-black text-on-surface leading-tight">{cluster.firName}</div>
-                  </div>
-                </div>
-                <div className="mt-4 flex gap-2">
-                  <span className="rounded-[16px] bg-slate-50 px-4 py-2 text-xs font-black text-slate-500 border-[2px] border-slate-100">
-                    {cluster.facilityCount} 設施
+                <div className="min-w-0">
+                  <span className={`text-sm font-bold tracking-widest ${isActive ? 'text-[#ffd9a0]' : 'text-[var(--color-poster-stamp)]'}`}>
+                    {cluster.firIcao}
                   </span>
+                  <div className="truncate text-base font-bold uppercase tracking-wide">{cluster.firName}</div>
                 </div>
+                <span className="shrink-0 text-xs opacity-70">{cluster.facilityCount} 站</span>
               </button>
             );
           })}
         </div>
-      </GlassPanel>
+      </aside>
 
-      <GlassPanel className="overflow-hidden flex flex-col">
-        <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
+      {/* 主圖：復古海報地圖 */}
+      <section className="texture-paper relative overflow-hidden rounded-[20px] border-2 border-[#e3d5bb] p-6 shadow-[0_6px_24px_rgba(79,109,122,0.12)] md:p-8">
+        <div className="mb-6 flex flex-wrap items-end justify-between gap-3 border-b-2 border-dashed border-[#cdbb98] pb-4">
           <div>
-            <div className="text-[13px] font-black tracking-widest text-primary uppercase">Signal Map</div>
-            <h2 className="mt-1 text-4xl font-black text-on-surface">全球中繼站 📡</h2>
+            <div className="text-[11px] font-bold uppercase tracking-[0.25em] text-[var(--color-poster-stamp)]">World Coverage · Est. 2026</div>
+            <h2 className="mt-1 font-mono text-3xl font-bold uppercase tracking-wide text-[var(--color-poster-ink)]">全球航線海報</h2>
           </div>
           {activeCluster && (
-            <div className="rounded-[24px] bg-blue-50 border-[3px] border-blue-100 px-6 py-3 text-sm font-bold text-blue-600 shadow-sm">
-              當前焦點：<span className="text-xl font-black ml-2 text-blue-700">{activeCluster.firName}</span>
+            <div className="stamp-edge rotate-2 rounded-lg bg-white px-4 py-2 font-mono text-sm font-bold text-[var(--color-poster-stamp)]">
+              FOCUS · {activeCluster.firIcao}
             </div>
           )}
         </div>
 
-        <div className="flex flex-col gap-6">
-          <div className="relative min-h-[480px] overflow-x-auto overflow-y-hidden rounded-[40px] border-[4px] border-slate-100 bg-[#fffdfd] shadow-inner xl:min-h-[560px]">
-            <div className="relative min-w-[760px] min-h-[480px] w-full h-full xl:min-h-[560px]">
-              
-              {/* Cute Abstract Map Background elements */}
-              <div className="absolute top-[20%] left-[20%] w-64 h-64 bg-pink-100/60 rounded-full blur-3xl mix-blend-multiply"></div>
-              <div className="absolute top-[50%] right-[30%] w-80 h-80 bg-blue-100/60 rounded-full blur-3xl mix-blend-multiply"></div>
-              <div className="absolute bottom-[10%] left-[40%] w-72 h-72 bg-yellow-100/60 rounded-full blur-3xl mix-blend-multiply"></div>
+        <div className="relative min-h-[460px] overflow-x-auto rounded-xl">
+          <div className="relative min-h-[460px] min-w-[760px]">
+            {/* 航線（裝飾） */}
+            <svg className="pointer-events-none absolute inset-0 h-full w-full opacity-50">
+              <path d="M120 200 Q300 60 560 110 T740 230" stroke="#c96f4a" strokeWidth="2.5" fill="none" strokeDasharray="2 10" strokeLinecap="round" />
+              <path d="M100 300 Q280 390 470 340 T700 260" stroke="#4f6d7a" strokeWidth="2.5" fill="none" strokeDasharray="2 10" strokeLinecap="round" />
+            </svg>
 
-              {regionSummaries.map((summary) => {
-                const config = REGION_MAP_CONFIG[summary.regionCode] ?? REGION_MAP_CONFIG.TW;
-                const relatedClusters = firClusters.filter((cluster) => cluster.regionCode === summary.regionCode);
-                const active = relatedClusters.some((cluster) => cluster.firIcao === activeCluster?.firIcao);
+            {/* 郵票式區域卡 */}
+            {regionSummaries.map((summary, index) => {
+              const config = REGION_MAP_CONFIG[summary.regionCode] ?? REGION_MAP_CONFIG.TW;
+              const relatedClusters = firClusters.filter((cluster) => cluster.regionCode === summary.regionCode);
+              const isActive = relatedClusters.some((cluster) => cluster.firIcao === activeCluster?.firIcao);
+              const rotation = ['-rotate-3', 'rotate-2', '-rotate-1', 'rotate-3'][index % 4];
 
-                return (
-                  <button
-                    key={summary.regionCode}
-                    onClick={() => setSelectedFir(relatedClusters[0]?.firIcao ?? null)}
-                    className="absolute text-left transition-all duration-500 hover:scale-[1.15] hover:z-20 cursor-pointer"
-                    style={{ top: config.top, left: config.left }}
-                  >
-                    <div className={`relative min-w-[170px] rounded-[32px] border-[4px] p-4 shadow-xl transition-all ${
-                        active ? 'border-primary bg-white scale-110 shadow-[0_16px_40px_rgba(255,154,171,0.3)]' : 'border-white bg-white/90 backdrop-blur-md opacity-95 hover:border-pink-200'
-                    }`}>
-                      <div className="flex items-center gap-4">
-                         <div className={`flex h-12 w-12 items-center justify-center rounded-[20px] text-2xl font-black ${active ? 'bg-primary text-white scale-110' : 'bg-pink-50 text-pink-500'}`}>
-                            {summary.regionCode.slice(0,1)}
-                         </div>
-                         <div>
-                            <div className="text-sm font-black text-slate-400">{REGION_LABELS[summary.regionCode] ?? summary.regionCode}</div>
-                            <div className="text-xl font-black text-on-surface">{config.shortName}</div>
-                         </div>
-                      </div>
+              return (
+                <button
+                  key={summary.regionCode}
+                  onClick={() => setSelectedFir(relatedClusters[0]?.firIcao ?? null)}
+                  className={`absolute text-left transition-transform duration-300 hover:z-20 hover:scale-110 ${rotation}`}
+                  style={{ top: config.top, left: config.left }}
+                >
+                  <div className={`stamp-edge min-w-[130px] rounded-lg p-3 transition-colors ${
+                    isActive ? 'bg-[#fff3da]' : 'bg-white/95'
+                  }`}>
+                    <div className="font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-[var(--color-poster-stamp)]">
+                      {REGION_LABELS[summary.regionCode] ?? summary.regionCode}
                     </div>
-                  </button>
-                );
-              })}
+                    <div className="font-mono text-lg font-bold uppercase text-[var(--color-poster-ink)]">{config.shortName}</div>
+                    <div className="mt-1 text-[11px] font-medium text-[#8a7a5c]">
+                      {summary.facilityCount} 設施 · {summary.liveCount} 即時
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
 
-              {/* Softer Bouncy SVG Connectors */}
-              <svg className="pointer-events-none absolute inset-0 h-full w-full opacity-60">
-                <path d="M180 210 Q300 80 580 120 T720 220" stroke="#ff9aab" strokeWidth="6" strokeLinecap="round" fill="none" strokeDasharray="10 16" />
-                <path d="M140 310 Q260 400 450 360 T660 280" stroke="#a0c4ff" strokeWidth="6" strokeLinecap="round" fill="none" strokeDasharray="10 16" />
-                <path d="M680 240 Q740 340 650 400 T560 420" stroke="#b9fbc0" strokeWidth="6" strokeLinecap="round" fill="none" strokeDasharray="10 16" />
-              </svg>
+        {/* 登機證式詳情 */}
+        {activeCluster && (
+          <div className="mt-6 grid gap-0 overflow-hidden rounded-xl border-2 border-[#e3d5bb] bg-white md:grid-cols-[1fr_auto_280px]">
+            <div className="p-6">
+              <div className="text-[11px] font-bold uppercase tracking-[0.25em] text-[var(--color-poster-stamp)]">Boarding Information</div>
+              <div className="mt-2 font-mono text-3xl font-bold uppercase text-[var(--color-poster-ink)]">
+                {activeCluster.firName}
+                <span className="ml-3 text-xl text-[#b6a888]">{activeCluster.firIcao}</span>
+              </div>
+              <div className="mt-4 flex flex-wrap gap-2">
+                {activeCluster.frequencies.map((frequency) => (
+                  <span key={frequency} className="rounded-md border border-[#e3d5bb] bg-[#faf3e3] px-3 py-1.5 font-mono text-sm font-bold text-[var(--color-poster-ink)]">
+                    {frequency}
+                  </span>
+                ))}
+              </div>
+              {leadFacility && <SourceFooter record={leadFacility} className="mt-5 border-[#e3d5bb]" />}
+            </div>
+            <div className="hidden border-l-2 border-dashed border-[#cdbb98] md:block" />
+            <div className="flex flex-col justify-center gap-2 bg-[#faf3e3] p-6 font-mono text-sm text-[var(--color-poster-ink)]">
+              <div className="flex justify-between"><span className="opacity-60">AIRAC</span><span className="font-bold">{activeCluster.airacCycle}</span></div>
+              <div className="flex justify-between"><span className="opacity-60">設施</span><span className="font-bold">{activeCluster.facilityCount}</span></div>
+              <div className="flex justify-between"><span className="opacity-60">即時解析</span><span className="font-bold">{activeCluster.verifiedFacilities}</span></div>
+              <div className="flex justify-between"><span className="opacity-60">AFTN</span><span className="font-bold">{activeCluster.aftnAddresses[0] ?? '—'}</span></div>
             </div>
           </div>
-
-          {activeCluster && (
-            <div className="grid gap-4 lg:grid-cols-2">
-              <div className="rounded-[40px] bg-white border-[3px] border-slate-100 p-8 flex flex-col justify-center shadow-sm hover:border-primary/30 transition-colors">
-                 <div className="text-[13px] font-black uppercase tracking-widest text-primary">目前檢視 FIR</div>
-                 <div className="text-[40px] leading-tight font-black text-on-surface mt-2">{activeCluster.firName} <br/><span className="text-3xl text-slate-300">({activeCluster.firIcao})</span></div>
-              </div>
-
-              <div className="rounded-[40px] bg-white border-[3px] border-slate-100 p-8 shadow-sm flex flex-col justify-center hover:border-blue-200 transition-colors">
-                <div className="text-[13px] font-black uppercase tracking-widest text-blue-500 mb-4">通訊頻率 📻</div>
-                <div className="flex flex-wrap gap-3">
-                  {activeCluster.frequencies.map((frequency) => (
-                    <span key={frequency} className="rounded-[20px] bg-blue-50 border-[3px] border-blue-100 text-blue-600 px-5 py-3 font-black text-xl hover:scale-105 transition-transform cursor-default">
-                      {frequency}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-      </GlassPanel>
+        )}
+      </section>
     </div>
   );
 }

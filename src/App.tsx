@@ -5,13 +5,14 @@ import { Container } from './components/StyledComponents';
 import Dashboard from './views/Dashboard';
 import SectorsMap from './views/SectorsMap';
 import RescueContacts from './views/RescueContacts';
-import ActiveCall from './views/ActiveCall';
+import EmergencyPanel from './views/EmergencyPanel';
+import OpsNotebook from './views/OpsNotebook';
 import { buildFirClusters, buildOperationsOverview } from './lib/firAnalytics';
 import { ApiResponse, FirContactRecord, PaginatedContacts, SourceValidation, TabType } from './types';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabType>('sos');
-  const [isCallActive, setIsCallActive] = useState(false);
+  const [emergencyRecord, setEmergencyRecord] = useState<FirContactRecord | null>(null);
   const [records, setRecords] = useState<FirContactRecord[]>([]);
   const [validations, setValidations] = useState<SourceValidation[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -63,8 +64,11 @@ export default function App() {
   const firClusters = useMemo(() => buildFirClusters(records), [records]);
   const overview = useMemo(() => buildOperationsOverview(records, validations), [records, validations]);
 
-  if (isCallActive) {
-    return <ActiveCall onEndCall={() => setIsCallActive(false)} firClusters={firClusters} />;
+  /** SOS：優先挑搜救協調中心（RCC），其次第一個 hot cluster 的首設施 */
+  function handleTriggerSOS() {
+    const rcc = records.find((record) => record.facilityType === 'RCC');
+    const fallback = firClusters[0]?.facilities[0] ?? records[0] ?? null;
+    setEmergencyRecord(rcc ?? fallback);
   }
 
   return (
@@ -84,12 +88,11 @@ export default function App() {
 
       <Container id="app-container">
         {error && (
-          <div id="error-banner" className="mb-8 rounded-[32px] border-[3px] border-red-200 bg-red-50 p-6 shadow-sm flex items-center gap-4">
-            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-red-100 text-red-500">
-               <span className="material-symbols-outlined text-3xl font-bold">error</span>
-            </div>
-            <div className="text-[16px] font-black text-red-500">
-              連線異常：{error} ⚡ <br className="md:hidden"/><span className="text-red-400">我們會盡力顯示快取資料！</span>
+          <div id="error-banner" className="mb-8 flex items-center gap-4 rounded-3xl border-2 border-red-200 bg-red-50 p-5">
+            <span className="material-symbols-outlined text-3xl text-red-400">error</span>
+            <div className="text-[15px] font-bold text-red-500">
+              連線異常：{error}
+              <span className="ml-2 text-red-400">已盡可能顯示快取資料。</span>
             </div>
           </div>
         )}
@@ -101,7 +104,7 @@ export default function App() {
             validations={validations}
             isLoading={isLoading}
             lastSynced={lastSynced}
-            onTriggerSOS={() => setIsCallActive(true)}
+            onTriggerSOS={handleTriggerSOS}
             onRefresh={handleRefresh}
           />
         )}
@@ -112,21 +115,15 @@ export default function App() {
           <RescueContacts
             records={records}
             isLoading={isLoading}
-            onCall={() => setIsCallActive(true)}
+            onCall={(record) => setEmergencyRecord(record)}
           />
         )}
-        {activeTab === 'chat' && (
-          <div id="chat-view" className="flex flex-1 min-h-[600px] flex-col justify-center items-center rounded-[48px] border-[4px] border-white bg-white/60 backdrop-blur-xl p-8 text-center shadow-[0_8px_40px_rgba(0,0,0,0.04)]">
-            <div className="w-32 h-32 mb-8 rounded-[40px] bg-pink-100 border-4 border-pink-200 flex items-center justify-center shadow-inner transform rotate-6">
-              <span className="material-symbols-outlined text-6xl text-pink-500 font-bold">construction</span>
-            </div>
-            <h2 className="text-4xl md:text-5xl font-black text-on-surface">施工中喵 🐾</h2>
-            <p className="mt-6 max-w-lg text-[18px] text-slate-500 font-bold leading-relaxed">
-              作業通道正在重新裝潢中，請先使用其他可愛的儀表板功能吧！<br/><br/>未來我們會加入更多酷炫又甜美的通訊功能！✨
-            </p>
-          </div>
-        )}
+        {activeTab === 'chat' && <OpsNotebook />}
       </Container>
+
+      {emergencyRecord && (
+        <EmergencyPanel record={emergencyRecord} onClose={() => setEmergencyRecord(null)} />
+      )}
     </div>
   );
 }

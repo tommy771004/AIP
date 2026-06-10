@@ -44,9 +44,9 @@ fir_icao
 
 String(4)
 
-FIR 的 4 碼 ICAO 代號 (主鍵)
+FIR 的 4 碼 ICAO 代號 (主鍵)，注意：是 FIR 代碼不是機場代碼（Taipei FIR = RCAA，RCTP 是桃園機場）
 
-RCTP
+RCAA
 
 fir_name
 
@@ -86,7 +86,7 @@ String(8)
 
 航空固定電信網路 8 碼地址 (極重要)
 
-RCTPZQZX
+RCAAZQZX
 
 vhf_freq
 
@@ -118,7 +118,7 @@ https://eaip.../RC-GEN-3.3-en-US.html
 
 1. 台灣 (Taiwan) - 民航局飛航服務總台 eAIP
 
-入口網址： https://eaip.caa.gov.tw/
+入口網址： https://ais.caa.gov.tw/eaip/ （已驗證 2026-06；舊站 eaip.caa.gov.tw 已無法連線）
 
 尋路策略： 在入口首頁尋找包含 Current eAIP 的連結。進入目錄後，在左側導航樹找尋 Part 1 - General (GEN) -> GEN 3.3 Air traffic services。
 
@@ -132,11 +132,13 @@ HTML 特徵： 資料包在 <div id="GEN-3.3"> 下的 <table class="eAIPTable"> 
 
 優勢： 涵蓋廣泛的南半球海域（布里斯本 YBBB 和墨爾本 YMMM 兩個超大 FIR）。
 
-3. 日本 (Japan) - AIS Japan
+3. 日本 (Japan) - SWIM Portal（原 AIS Japan）
 
-入口網址： https://aisjapan.mlit.go.jp/
+入口網址： https://top.swim.mlit.go.jp/swim/ （已驗證 2026-06）
 
-爬蟲挑戰： 必須實作會員登入機制（免費註冊）。爬蟲需先 POST 帳密取得 Cookie，登入後進入 eAIP 區塊，尋找 GEN 3.3。
+重要變更： AIS Japan（aisjapan.mlit.go.jp）已於 2026-03-10 永久停止服務，DNS 已移除。eAIP 與 NOTAM 服務全面遷移至 SWIM Portal。
+
+爬蟲挑戰： 仍須實作會員登入機制（免費註冊）。爬蟲需先取得登入 Session，再進入 eAIP 區塊尋找 GEN 3.3。
 
 4. 英國 (United Kingdom) - NATS
 
@@ -144,9 +146,9 @@ HTML 特徵： 資料包在 <div id="GEN-3.3"> 下的 <table class="eAIPTable"> 
 
 尋路策略： NATS 使用標準的 Eurocontrol eAIP 系統，結構極度規律。進入 GEN 3.3 後，用 XPath 定位 "London ACC" 或 "Scottish ACC" 的表格。
 
-5. 新加坡 (Singapore) - CAAS AIP (代表東南亞樞紐)
+5. 新加坡 (Singapore) - CAAS AIM-SG (代表東南亞樞紐)
 
-入口網址： https://aip.caas.gov.sg/
+入口網址： https://aim-sg.caas.gov.sg/aip/ （已驗證 2026-06；舊站 aip.caas.gov.sg 已下線，DNS 已移除）
 
 尋路策略： 新加坡的 eAIP 介面非常乾淨且標準。首頁點擊生效日期後，展開左側 iframe 選單找到 GEN 3.3。
 
@@ -168,7 +170,7 @@ HTML 特徵： 資料包在 <div id="GEN-3.3"> 下的 <table class="eAIPTable"> 
 
 8. 巴西 (Brazil) - DECEA AISWEB (代表南美洲)
 
-入口網址： https://aisweb.decea.mil.br/
+入口網址： https://aisweb.decea.mil.br/ （站台存活但可能封鎖部分海外 IP / TLS client，爬蟲需準備重試與備援）
 
 尋路策略： 巴西的系統非常現代化，但也相對獨特。進入網站後，可以尋找 Publicações -> AIP Brasil。巴西管轄五個主要的 FIR（如 Atlântico, Brasília 等），資料通常分布在 GEN 3.3 的 PDF 或專屬頁面中。
 
@@ -199,9 +201,15 @@ HTML 特徵： 資料包在 <div id="GEN-3.3"> 下的 <table class="eAIPTable"> 
 
 2. OpenAIP (補齊空中頻率)
 
-API 網址： https://api.openaip.net/v1/airspaces
+API 網址： https://api.core.openaip.net/api/airspaces （舊端點 api.openaip.net/v1 已停用，DNS 已移除）
 
-爬蟲動作： 直接發送 GET 請求。雖然 OpenAIP 沒有「市內電話」，但它能為你的系統補齊非常準確的 vhf_freq (無線電頻率) 以及該 FIR 的精確 GeoJSON 邊界多邊形。
+爬蟲動作： 需註冊取得免費 API key，透過 `x-openaip-api-key` header 或 `apiKey` query 參數帶入。雖然 OpenAIP 沒有「市內電話」，但它能為你的系統補齊非常準確的 vhf_freq (無線電頻率) 以及該 FIR 的精確 GeoJSON 邊界多邊形。
+
+3. 紐西蘭 (New Zealand) - Airways AIP New Zealand
+
+入口網址： https://www.aip.net.nz/ （已驗證 2026-06）
+
+爬蟲動作： GEN 3.3 直接以固定路徑 PDF 發布（/assets/AIP/General-GEN/3-SERVICES/GEN_3.3.pdf），Table GEN 3.3-2 即為 ATS Unit Address List，含 Christchurch ACC 電話、傳真與 AFTN，是極穩定的官方來源。NZ 全境為單一 New Zealand FIR (NZZC)，海洋區為 Auckland Oceanic (NZZO)。
 
 伍、 爬蟲實作防坑建議 (Tips)
 
