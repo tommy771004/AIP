@@ -665,16 +665,20 @@ async function scrapeIndiaAai(): Promise<FirContactRecord[]> {
       const unitName = cells[1];
       if (!/\bACC\b/.test(unitName) || unitName.length > 40) return;
 
-      const phoneRaw = cells[3].match(/\b91[-\s]?[\d][\d\s/-]{7,18}\b/)?.[0];
-      const faxRaw = cells[4].match(/\b91[-\s]?[\d][\d\s/-]{7,18}\b/)?.[0];
+      // 印度電話格式不一：斜線/空格分隔多組號碼（如 "91-471-2500199 91-471-2505092"），
+      // 先在「下一組 91 開頭」處切開，只取第一組，再移除組內空格（如 "91-11-2565 3283"）
+      const firstNumber = (cell: string) => {
+        const candidate = cell.split('/')[0].split(/\s+(?=\+?91[-\d])/)[0].replace(/\s+/g, '');
+        return /^91[-\d]{8,14}$/.test(candidate) ? `+${candidate}` : undefined;
+      };
+
+      const phone = firstNumber(cells[3]);
+      const fax = firstNumber(cells[4]);
       const aftn = cells[6].match(/\bV[A-Z]{3}Z[A-Z]ZX\b/)?.[0];
-      if (!phoneRaw || !aftn) return;
+      if (!phone || !aftn) return;
 
       const fir = INDIA_FIR_BY_PREFIX[aftn.slice(0, 2)];
       if (!fir) return;
-
-      // 印度電話格式不一（含斜線多號碼），取第一組並保留來源連字號
-      const phone = `+${phoneRaw.split('/')[0].replace(/\s+/g, '')}`;
 
       records.push(buildRecord({
         id: `IN-${aftn}`,
@@ -684,7 +688,7 @@ async function scrapeIndiaAai(): Promise<FirContactRecord[]> {
         facilityName: unitName,
         facilityType: 'ACC',
         phoneNumber: phone,
-        faxNumber: faxRaw ? `+${faxRaw.split('/')[0].replace(/\s+/g, '')}` : undefined,
+        faxNumber: fax,
         aftnAddress: aftn,
         vhfFreq: [GUARD_FREQ],
         sourceName: source.name,
@@ -734,9 +738,10 @@ async function scrapeFranceSia(): Promise<FirContactRecord[]> {
     const text = sanitizeText(cheerio.load(page.data)('body').text());
     const records: FirContactRecord[] = [];
 
-    // 注意：CRNA Sud-Est/Sud-Ouest 含 "CRNA Est"/"CRNA Ouest" 子字串，匹配時需排除前綴誤中
+    // 地址區塊格式為「CRNA <名稱><地址緊鄰無空格>...TEL : ...」（如 "CRNA OuestRD 29 Lieu-dit..."），
+    // 要求名稱後緊跟大寫字母或數字（地址開頭），可同時排除散文段的「CRNA – Est」破折號形式
     for (const def of FRANCE_CRNA_DEFS) {
-      const pattern = new RegExp(`(?<![A-Za-z-])${def.key}(?![a-zA-Z-])[\\s\\S]{0,200}?TEL\\s*:\\s*\\(33\\)\\s*\\(0\\)\\s*([\\d ]{8,14})(?:FAX\\s*:\\s*\\(33\\)\\s*\\(0\\)\\s*([\\d ]{8,14}))?`);
+      const pattern = new RegExp(`${def.key}(?=[A-Z0-9])[\\s\\S]{0,200}?TEL\\s*:\\s*\\(33\\)\\s*\\(0\\)\\s*([\\d ]{8,14})(?:FAX\\s*:\\s*\\(33\\)\\s*\\(0\\)\\s*([\\d ]{8,14}))?`);
       const match = text.match(pattern);
       if (!match) continue;
 
