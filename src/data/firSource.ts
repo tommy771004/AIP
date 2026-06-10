@@ -14,6 +14,14 @@ export const REGION_LABELS: Record<string, string> = {
   NZ: '紐西蘭',
   IN: '印度',
   FR: '法國',
+  ES: '西班牙',
+  MY: '馬來西亞',
+  DE: '德國',
+  BT: '不丹',
+  TH: '泰國',
+  MN: '蒙古',
+  NO: '挪威',
+  MO: '澳門',
 };
 
 export const REGION_FLAGS: Record<string, string> = {
@@ -30,6 +38,14 @@ export const REGION_FLAGS: Record<string, string> = {
   NZ: 'NZ',
   IN: 'IN',
   FR: 'FR',
+  ES: 'ES',
+  MY: 'MY',
+  DE: 'DE',
+  BT: 'BT',
+  TH: 'TH',
+  MN: 'MN',
+  NO: 'NO',
+  MO: 'MO',
 };
 
 export const REGION_MAP_CONFIG: Record<string, RegionMapConfig> = {
@@ -123,6 +139,62 @@ export const REGION_MAP_CONFIG: Record<string, RegionMapConfig> = {
     shortName: '法國',
     accentClass: 'from-blue-200 via-indigo-200 to-violet-300',
     haloClass: 'bg-blue-400/25',
+  },
+  ES: {
+    top: '31%',
+    left: '25%',
+    shortName: '西班牙',
+    accentClass: 'from-amber-200 via-red-300 to-orange-300',
+    haloClass: 'bg-amber-400/25',
+  },
+  MY: {
+    top: '48%',
+    left: '58%',
+    shortName: '馬來西亞',
+    accentClass: 'from-lime-200 via-emerald-300 to-teal-300',
+    haloClass: 'bg-emerald-400/25',
+  },
+  DE: {
+    top: '23%',
+    left: '30%',
+    shortName: '德國',
+    accentClass: 'from-zinc-200 via-amber-200 to-red-300',
+    haloClass: 'bg-zinc-400/25',
+  },
+  BT: {
+    top: '37%',
+    left: '52%',
+    shortName: '不丹',
+    accentClass: 'from-orange-200 via-yellow-300 to-amber-300',
+    haloClass: 'bg-yellow-400/25',
+  },
+  TH: {
+    top: '43%',
+    left: '56%',
+    shortName: '泰國',
+    accentClass: 'from-sky-200 via-cyan-300 to-emerald-300',
+    haloClass: 'bg-cyan-400/25',
+  },
+  MN: {
+    top: '25%',
+    left: '53%',
+    shortName: '蒙古',
+    accentClass: 'from-blue-200 via-sky-300 to-cyan-300',
+    haloClass: 'bg-blue-400/25',
+  },
+  NO: {
+    top: '15%',
+    left: '31%',
+    shortName: '挪威',
+    accentClass: 'from-slate-200 via-sky-200 to-blue-300',
+    haloClass: 'bg-sky-400/25',
+  },
+  MO: {
+    top: '36%',
+    left: '57%',
+    shortName: '澳門',
+    accentClass: 'from-rose-200 via-red-300 to-orange-300',
+    haloClass: 'bg-red-400/25',
   },
 };
 
