@@ -22,6 +22,8 @@ const TAB_COLORS: Record<FacilityType, string> = {
   AFIS: 'bg-teal-400',
   TWR: 'bg-amber-400',
   'TWR/APP': 'bg-orange-400',
+  COM: 'bg-slate-400',
+  NOF: 'bg-fuchsia-400',
 };
 
 export default function RescueContacts({ records, isLoading, onCall }: RescueContactsProps) {
@@ -97,6 +99,14 @@ export default function RescueContacts({ records, isLoading, onCall }: RescueCon
             <span className="material-symbols-outlined animate-spin text-5xl">cached</span>
             <span className="text-lg font-bold">翻找名片盒中…</span>
           </div>
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="flex min-h-[360px] flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-[var(--color-rolodex-tab)]/40 bg-white/60 px-6 text-center">
+          <span className="material-symbols-outlined text-5xl text-[var(--color-rolodex-tab)]/60">cloud_off</span>
+          <p className="text-lg font-bold text-slate-500">目前沒有即時解析成功的設施資料</p>
+          <p className="max-w-md text-sm font-medium text-slate-400">
+            本系統只顯示當下實際從官方 eAIP 抓取的資料，不提供快取。請稍後重新同步，或查看總覽的來源健康度。
+          </p>
         </div>
       ) : (
         <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">

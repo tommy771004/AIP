@@ -118,6 +118,8 @@ export const FACILITY_TYPE_LABELS: Record<FacilityType, string> = {
   AFIS: '飛航情報服務',
   TWR: '塔台',
   'TWR/APP': '塔台／進場',
+  COM: '航空通信中心',
+  NOF: '國際飛航公告室',
 };
 
 export const SOURCE_STATUS_LABELS = {

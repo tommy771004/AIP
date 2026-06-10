@@ -1,6 +1,6 @@
 export type TabType = 'sectors' | 'sos' | 'rescue' | 'chat';
 
-export type FacilityType = 'ACC' | 'ARTCC' | 'APP' | 'FIC' | 'RCC' | 'MED' | 'AFIS' | 'TWR' | 'TWR/APP';
+export type FacilityType = 'ACC' | 'ARTCC' | 'APP' | 'FIC' | 'RCC' | 'MED' | 'AFIS' | 'TWR' | 'TWR/APP' | 'COM' | 'NOF';
 
 export interface FirContactRecord {
   id: string;

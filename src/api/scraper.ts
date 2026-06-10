@@ -1,6 +1,5 @@
 import axios from 'axios';
 import * as cheerio from 'cheerio';
-import { PDFParse } from 'pdf-parse';
 import type {
   FacilityType,
   FirContactRecord,
@@ -9,6 +8,17 @@ import type {
   SourceValidation,
 } from '../types';
 
+/**
+ * 純即時模式：所有記錄一律來自當下實際抓取與解析，不保留任何硬編碼種子/快取。
+ * 解析失敗或來源不可達 → 該來源回傳空陣列（誠實缺席，而非假資料）。
+ *
+ * SCRAPER_SOURCES 仍保留全部目標來源供 /api/sources/validate 健康監測；
+ * 但只有結構可被程式化解析的來源（台灣、英國、新加坡）會產生聯絡記錄。
+ * 其餘來源的障礙：日本 SWIM 需登入、香港為 JS 動態站、澳洲入口無直接連結、
+ * 加拿大為 PDF 包、巴西封鎖海外連線、紐西蘭有 Incapsula 防護、
+ * Eurocontrol/FAA 需登入或為離線資料包。
+ */
+
 interface ScraperSourceDefinition {
   name: string;
   url: string;
@@ -16,24 +26,6 @@ interface ScraperSourceDefinition {
   regionCode: string;
   firName: string;
   firIcao: string;
-}
-
-interface ContactSeed {
-  id: string;
-  firIcao: string;
-  firName: string;
-  regionCode: string;
-  facilityName: string;
-  facilityType: FacilityType;
-  phoneNumber: string;
-  faxNumber?: string;
-  aftnAddress: string;
-  vhfFreq: string[];
-  sourceName: string;
-  sourceUrl: string;
-  sourceVerified: boolean;
-  /** true = 聯絡欄位確實從來源即時解析；false/省略 = 硬編碼種子（sourceStatus 標 cache） */
-  fieldsParsed?: boolean;
 }
 
 export const SCRAPER_SOURCES: Record<string, ScraperSourceDefinition> = {
@@ -46,7 +38,7 @@ export const SCRAPER_SOURCES: Record<string, ScraperSourceDefinition> = {
     firIcao: 'RCAA',
   },
   JAPAN: {
-    // AIS Japan (aisjapan.mlit.go.jp) 已於 2026-03-10 停止服務，eAIP 遷移至 SWIM Portal
+    // AIS Japan (aisjapan.mlit.go.jp) 已於 2026-03-10 停止服務，eAIP 遷移至 SWIM Portal（需登入，暫無法解析）
     name: '日本 SWIM Portal（eAIP Japan）',
     url: 'https://top.swim.mlit.go.jp/swim/',
     fallbackGen33Url: 'https://top.swim.mlit.go.jp/swim/',
@@ -57,7 +49,7 @@ export const SCRAPER_SOURCES: Record<string, ScraperSourceDefinition> = {
   AUSTRALIA: {
     name: '澳洲 Airservices AIP',
     url: 'https://www.airservicesaustralia.com/aip/aip.asp',
-    fallbackGen33Url: 'https://www.airservicesaustralia.com/aip/current/html/AIP/MS-GEN-3.3-en-AU.html',
+    fallbackGen33Url: 'https://www.airservicesaustralia.com/aip/aip.asp',
     regionCode: 'AU',
     firName: 'Melbourne FIR',
     firIcao: 'YMMM',
@@ -71,7 +63,6 @@ export const SCRAPER_SOURCES: Record<string, ScraperSourceDefinition> = {
     firIcao: 'EGTT',
   },
   SINGAPORE: {
-    // 舊站 aip.caas.gov.sg 已下線，遷移至 AIM-SG 入口
     name: '新加坡 CAAS AIM-SG eAIP',
     url: 'https://aim-sg.caas.gov.sg/',
     fallbackGen33Url: 'https://aim-sg.caas.gov.sg/aip/',
@@ -106,7 +97,7 @@ export const SCRAPER_SOURCES: Record<string, ScraperSourceDefinition> = {
   NEW_ZEALAND: {
     name: '紐西蘭 Airways AIP New Zealand',
     url: 'https://www.aip.net.nz/',
-    fallbackGen33Url: 'https://www.aip.net.nz/assets/AIP/General-GEN/3-SERVICES/GEN_3.3.pdf',
+    fallbackGen33Url: 'https://www.aip.net.nz/',
     regionCode: 'NZ',
     firName: 'New Zealand FIR',
     firIcao: 'NZZC',
@@ -127,23 +118,32 @@ export const SCRAPER_SOURCES: Record<string, ScraperSourceDefinition> = {
     firName: 'Oakland ARTCC',
     firIcao: 'KZOA',
   },
-  SKYVECTOR: {
-    name: 'SkyVector 航空資料庫',
-    url: 'https://skyvector.com/',
-    fallbackGen33Url: 'https://skyvector.com/airport/RCTP/Taiwan-Taoyuan-International-Airport',
-    regionCode: 'TW',
-    firName: 'Taipei FIR',
-    firIcao: 'RCAA',
-  },
 };
 
-function buildRecord(seed: ContactSeed): FirContactRecord {
-  const { fieldsParsed, ...rest } = seed;
+interface RealtimeContact {
+  id: string;
+  firIcao: string;
+  firName: string;
+  regionCode: string;
+  facilityName: string;
+  facilityType: FacilityType;
+  phoneNumber: string;
+  faxNumber?: string;
+  aftnAddress: string;
+  vhfFreq: string[];
+  sourceName: string;
+  sourceUrl: string;
+}
+
+/** 121.5 MHz 為 ICAO 國際緊急守聽頻率（常數，非來源解析值） */
+const GUARD_FREQ = '121.5 MHz';
+
+function buildRecord(contact: RealtimeContact): FirContactRecord {
   return {
-    ...rest,
+    ...contact,
     airacCycle: getCurrentAiracDate(),
-    // live 只代表「欄位真的從來源解析出來」；入口頁可達但用種子資料 → cache
-    sourceStatus: fieldsParsed ? 'live' : 'cache',
+    sourceVerified: true,
+    sourceStatus: 'live',
     lastValidatedAt: new Date().toISOString(),
   };
 }
@@ -171,9 +171,7 @@ function findFirstLink(
 
   $('a').each((_, element) => {
     if (selected) return;
-    const href = $(
-      element
-    ).attr('href') ?? '';
+    const href = $(element).attr('href') ?? '';
     const text = sanitizeText($(element).text());
 
     if (matcher(href, text)) {
@@ -186,146 +184,10 @@ function findFirstLink(
 
 async function fetchPage(url: string) {
   return axios.get(url, {
-    timeout: 10000,
+    timeout: 12000,
     headers: { 'User-Agent': 'Mozilla/5.0 (AIP Ops Bot)' },
     validateStatus: (status) => status < 500,
   });
-}
-
-async function resolveTaiwanGen33Url() {
-  const source = SCRAPER_SOURCES.TAIWAN;
-  const landing = await fetchPage(source.url);
-  const currentAiracUrl =
-    findFirstLink(
-      landing.data,
-      source.url,
-      (href, text) =>
-        /current/i.test(text) ||
-        /eaip/i.test(text) ||
-        /airac/i.test(text) ||
-        /index/i.test(href)
-    ) || source.fallbackGen33Url;
-
-  if (/GEN-?3\.3/i.test(currentAiracUrl)) {
-    return { url: currentAiracUrl, sourceVerified: landing.status < 400 };
-  }
-
-  const currentAiracPage = await fetchPage(currentAiracUrl);
-  const gen33Url =
-    findFirstLink(
-      currentAiracPage.data,
-      currentAiracUrl,
-      (href, text) => /GEN[\s-]*3\.3/i.test(text) || /GEN-?3\.3/i.test(href)
-    ) || source.fallbackGen33Url;
-
-  return {
-    url: gen33Url,
-    sourceVerified: landing.status < 400 && currentAiracPage.status < 400,
-  };
-}
-
-async function resolveAustraliaGen33Url() {
-  const source = SCRAPER_SOURCES.AUSTRALIA;
-  const landing = await fetchPage(source.url);
-  const gen33Url =
-    findFirstLink(
-      landing.data,
-      source.url,
-      (href, text) => /GEN[\s-]*3\.3/i.test(text) || /GEN-?3\.3/i.test(href)
-    ) || source.fallbackGen33Url;
-
-  return { url: gen33Url, sourceVerified: landing.status < 400 };
-}
-
-async function resolveUkGen33Url() {
-  const source = SCRAPER_SOURCES.UK;
-  const landing = await fetchPage(source.url);
-  const indexUrl =
-    findFirstLink(
-      landing.data,
-      source.url,
-      (href, text) =>
-        href.includes('htmlAIP') && (href.includes('index-en-GB.html') || /current/i.test(text))
-    ) || `${source.fallbackGen33Url}htmlAIP/Publications/${getCurrentAiracDate()}-AIRAC/html/index-en-GB.html`;
-
-  return {
-    url: indexUrl.replace('index-en-GB.html', 'eAIP/EG-GEN-3.3-en-GB.html'),
-    sourceVerified: landing.status < 400,
-  };
-}
-
-interface ParsedAccContact {
-  phoneNumber?: string;
-  faxNumber?: string;
-  aftnAddress?: string;
-}
-
-function normalizeUkPhone(raw: string) {
-  const digits = raw.replace(/\D/g, '');
-  if (!digits.startsWith('0')) return raw.trim();
-  return `+44-${digits.slice(1, 5)}-${digits.slice(5)}`;
-}
-
-/**
- * 解析 UK eAIP GEN 3.3 的 ATS Unit Address 表格。
- * 欄位結構：Name | Postal Address | Tel | Fax | Telex | AFS(AFTN)，
- * 子列（Watch Supervisor 等）會重複設施名，只取每個設施的第一筆完整列。
- */
-function parseUkAccContacts(html: string): { london?: ParsedAccContact; scottish?: ParsedAccContact } {
-  const $ = cheerio.load(html);
-  const result: { london?: ParsedAccContact; scottish?: ParsedAccContact } = {};
-
-  $('tr').each((_, row) => {
-    const rowText = sanitizeText($(row).text());
-    // 注意：不能用 Swanwick/Prestwick 當關鍵字——London Terminal Control 也在 Swanwick，會誤中
-    const target = /London\s+(Area\s+Control|AC\b)/i.test(rowText)
-      ? 'london'
-      : /Scottish\s+(AC\b|Area\s+Control)/i.test(rowText)
-        ? 'scottish'
-        : null;
-
-    if (!target || result[target]) return;
-
-    const aftnMatch = rowText.match(/\bEG[A-Z]{6}\b/);
-    const phones = rowText.match(/\b0\d{3,4}[-\s]?\d{6,7}\b/g) ?? [];
-    if (!aftnMatch || phones.length === 0) return;
-
-    result[target] = {
-      phoneNumber: normalizeUkPhone(phones[0]),
-      faxNumber: phones[1] ? normalizeUkPhone(phones[1]) : undefined,
-      aftnAddress: aftnMatch[0],
-    };
-  });
-
-  return result;
-}
-
-/** 解析 AIP New Zealand GEN 3.3 PDF（Table GEN 3.3-2 ATS Unit Address List）的 Christchurch ACC 列 */
-async function parseNzChristchurchContact(pdfBuffer: Buffer): Promise<ParsedAccContact | null> {
-  const parser = new PDFParse({ data: pdfBuffer });
-  let text = '';
-  try {
-    const result = await parser.getText();
-    text = result.text;
-  } finally {
-    await parser.destroy();
-  }
-
-  const anchor = text.indexOf('Christchurch');
-  if (anchor === -1) return null;
-
-  const windowText = text.slice(anchor, anchor + 800).replace(/\s+/g, ' ');
-  const phones = windowText.match(/\(0?3\)\s*\d{3}[\s-]?\d{4}/g) ?? [];
-  const aftnMatch = windowText.match(/\bNZ[A-Z]{6}\b/);
-  if (phones.length === 0 && !aftnMatch) return null;
-
-  const toIntl = (raw: string) => `+64-3-${raw.replace(/\(0?3\)/, '').replace(/\D/g, '').replace(/^(\d{3})(\d{4})$/, '$1-$2')}`;
-
-  return {
-    phoneNumber: phones[0] ? toIntl(phones[0]) : undefined,
-    faxNumber: phones[1] ? toIntl(phones[1]) : undefined,
-    aftnAddress: aftnMatch?.[0],
-  };
 }
 
 export function getCurrentAiracDate(): string {
@@ -365,148 +227,282 @@ export async function validateAllSources(): Promise<SourceValidation[]> {
   return Promise.all(Object.values(SCRAPER_SOURCES).map((source) => validateSource(source.name, source.url)));
 }
 
-async function probeSource(source: ScraperSourceDefinition) {
-  let sourceVerified = false;
-  let sourceUrl = source.fallbackGen33Url || source.url;
+// ──────────────────────────────────────────────
+//  台灣：ais.caa.gov.tw eAIP（IDS AIRNAV 結構）
+//  入口頁 → 「AIRAC AIP AMDT ...\index.html」→ eAIP/RC-GEN 3.3-en-GB.html
+// ──────────────────────────────────────────────
 
-  try {
-    const response = await fetchPage(source.url);
-    sourceVerified = response.status < 400;
+interface ParsedUnitRow {
+  phoneNumber?: string;
+  faxNumber?: string;
+  aftnAddress?: string;
+}
 
-    const discoveredUrl =
-      findFirstLink(
-        response.data,
-        source.url,
-        (href, text) =>
-          /airac|eaip|gen|aip|current/i.test(text) ||
-          /airac|eaip|gen|aip/i.test(href)
-      ) || sourceUrl;
+function normalizeTwPhone(raw: string) {
+  // 來源已是「886-區碼-號碼」格式且連字號位置正確（台灣區碼 1~2 碼不定長，勿自行重組）
+  return `+${raw.trim()}`;
+}
 
-    sourceUrl = discoveredUrl;
-  } catch {
-    sourceVerified = false;
-  }
+/** GEN 3.3 表格的英文單位名稱 → 設施類型 */
+const TW_TYPE_MAP: Array<[RegExp, FacilityType]> = [
+  [/\bACC\b/, 'ACC'],
+  [/\bFIC\b/, 'FIC'],
+  [/\bAPP\b/, 'APP'],
+  [/\bTWR\b/, 'TWR'],
+  [/\bFIS\b/, 'AFIS'],
+  [/\bRADIO\b|COM\s*CENTER/i, 'COM'],
+];
 
-  return { sourceVerified, sourceUrl };
+/**
+ * 通用解析 GEN 3.3「ATS 單位通訊錄」整張表。
+ * 欄位：單位名稱(中英) | 通訊地址 | 電話 | 傳真 | AFS。
+ * 注意：表格列名用縮寫（Taipei ACC、Taipei FIC），不能用全名匹配。
+ */
+function parseTaiwanGen33Table(html: string, source: ScraperSourceDefinition, sourceUrl: string): FirContactRecord[] {
+  const $ = cheerio.load(html);
+  const records: FirContactRecord[] = [];
+
+  $('tr').each((_, row) => {
+    const cells = $(row).children('td').map((__, cell) => sanitizeText($(cell).text())).get();
+    if (cells.length < 5) return;
+
+    const [nameCell, , telCell, faxCell, afsCell] = cells;
+    if (nameCell.length > 80) return; // 跳過巢狀容器列
+
+    const englishName = nameCell.match(/[A-Za-z][A-Za-z0-9 .\/()-]*$/)?.[0]?.trim();
+    if (!englishName) return;
+
+    const facilityType = TW_TYPE_MAP.find(([pattern]) => pattern.test(englishName))?.[1];
+    if (!facilityType) return;
+
+    const phone = telCell.match(/\b886[-\s]?[\d-]{8,13}\b/)?.[0];
+    const fax = faxCell.match(/\b886[-\s]?[\d-]{8,13}\b/)?.[0];
+    const aftns: string[] = afsCell.match(/\bRC[A-Z]{6}\b/g) ?? [];
+    if (!phone || aftns.length === 0) return;
+
+    const aftnAddress = aftns.find((address) => address.endsWith('ZQZX')) ?? aftns[0];
+
+    records.push(buildRecord({
+      id: `TW-${aftnAddress}`,
+      firIcao: 'RCAA',
+      firName: 'Taipei FIR',
+      regionCode: source.regionCode,
+      facilityName: englishName,
+      facilityType,
+      phoneNumber: normalizeTwPhone(phone),
+      faxNumber: fax ? normalizeTwPhone(fax) : undefined,
+      aftnAddress,
+      vhfFreq: [GUARD_FREQ],
+      sourceName: source.name,
+      sourceUrl,
+    }));
+  });
+
+  return records;
+}
+
+/** GEN 3.1：臺北國際飛航公告室（NOF）與 FIC 同址，AFS 不同 */
+function parseTaiwanNofFromGen31(html: string, source: ScraperSourceDefinition, sourceUrl: string): FirContactRecord | null {
+  const text = sanitizeText(cheerio.load(html)('body').text());
+  // 錨定 3.1.1.2 章節標題「... (NOF)」——文件開頭的介紹段也含同名字串，
+  // 若錨錯會抓到民航局標準組的電話而非 NOF
+  const anchor = text.indexOf('Taipei International NOTAM Office (NOF)');
+  if (anchor === -1) return null;
+
+  const windowText = text.slice(anchor, anchor + 1000);
+  const phone = windowText.match(/TEL:\s*(886[\d-]{8,13})/i)?.[1];
+  const fax = windowText.match(/FAX:\s*(886[\d-]{8,13})/i)?.[1];
+  const aftn = windowText.match(/(RC[A-Z]{6})\s*\(Taipei International NOTAM/i)?.[1]
+    ?? windowText.match(/\bRCTPYNYX\b/)?.[0];
+  if (!phone || !aftn) return null;
+
+  return buildRecord({
+    id: `TW-${aftn}-NOF`,
+    firIcao: 'RCAA',
+    firName: 'Taipei FIR',
+    regionCode: source.regionCode,
+    facilityName: 'Taipei International NOTAM Office',
+    facilityType: 'NOF',
+    phoneNumber: normalizeTwPhone(phone),
+    faxNumber: fax ? normalizeTwPhone(fax) : undefined,
+    aftnAddress: aftn,
+    vhfFreq: [GUARD_FREQ],
+    sourceName: source.name,
+    sourceUrl,
+  });
 }
 
 async function scrapeTaiwanANWS(): Promise<FirContactRecord[]> {
   const source = SCRAPER_SOURCES.TAIWAN;
 
   try {
-    const { url, sourceVerified } = await resolveTaiwanGen33Url();
-    const page = await fetchPage(url);
-    const bodyText = sanitizeText(cheerio.load(page.data)('body').text());
-    const phoneMatch = bodyText.match(/\+886[-\s]?\d[\d\s-]{6,16}/);
-    const taiwanFieldsParsed = Boolean(phoneMatch);
+    const landing = await fetchPage(source.url);
+    if (landing.status >= 400) return [];
 
-    return [
-      buildRecord({
-        id: 'RCAA-ACC',
-        firIcao: 'RCAA',
-        firName: 'Taipei FIR',
-        regionCode: source.regionCode,
-        facilityName: 'Taipei Area Control Center',
-        facilityType: 'ACC',
-        phoneNumber: phoneMatch?.[0]?.trim() ?? '+886-3-398-2210',
-        faxNumber: '+886-3-398-2220',
-        aftnAddress: 'RCAAZQZX',
-        vhfFreq: ['121.5 MHz', '125.1 MHz'],
-        sourceName: source.name,
-        sourceUrl: url,
-        sourceVerified: sourceVerified && page.status < 400,
-        fieldsParsed: taiwanFieldsParsed,
-      }),
-      buildRecord({
-        id: 'RCAA-RCC',
-        firIcao: 'RCAA',
-        firName: 'Taipei FIR',
-        regionCode: source.regionCode,
-        facilityName: 'Taiwan RCC',
-        facilityType: 'RCC',
-        phoneNumber: '+886-2-2514-1498',
-        aftnAddress: 'RCATYCYX',
-        vhfFreq: ['121.5 MHz', '243.0 MHz'],
-        sourceName: source.name,
-        sourceUrl: url,
-        sourceVerified: sourceVerified && page.status < 400,
-      }),
-    ];
+    const indexUrl = findFirstLink(
+      landing.data,
+      source.url,
+      (href, text) => /AMDT/i.test(href + text) && /index\.html/i.test(href)
+    );
+    if (!indexUrl) return [];
+
+    const baseUrl = decodeURI(indexUrl).replace(/index\.html$/i, '');
+    const gen33Url = encodeURI(`${baseUrl}eAIP/RC-GEN 3.3-en-GB.html`);
+    const gen31Url = encodeURI(`${baseUrl}eAIP/RC-GEN 3.1-en-GB.html`);
+
+    const records: FirContactRecord[] = [];
+
+    const gen33Page = await fetchPage(gen33Url);
+    if (gen33Page.status < 400) {
+      records.push(...parseTaiwanGen33Table(gen33Page.data, source, gen33Url));
+    }
+
+    try {
+      const gen31Page = await fetchPage(gen31Url);
+      if (gen31Page.status < 400) {
+        const nof = parseTaiwanNofFromGen31(gen31Page.data, source, gen31Url);
+        if (nof) records.push(nof);
+      }
+    } catch {
+      // NOF 補抓失敗不影響 GEN 3.3 主資料
+    }
+
+    return records;
   } catch {
-    return [
-      buildRecord({
-        id: 'RCAA-ACC-CACHE',
-        firIcao: 'RCAA',
-        firName: 'Taipei FIR',
-        regionCode: source.regionCode,
-        facilityName: 'Taipei Area Control Center',
-        facilityType: 'ACC',
-        phoneNumber: '+886-3-398-2210',
-        faxNumber: '+886-3-398-2220',
-        aftnAddress: 'RCAAZQZX',
-        vhfFreq: ['121.5 MHz', '125.1 MHz'],
-        sourceName: `${source.name}（離線快取）`,
-        sourceUrl: source.url,
-        sourceVerified: false,
-      }),
-      buildRecord({
-        id: 'RCAA-RCC-CACHE',
-        firIcao: 'RCAA',
-        firName: 'Taipei FIR',
-        regionCode: source.regionCode,
-        facilityName: 'Taiwan RCC',
-        facilityType: 'RCC',
-        phoneNumber: '+886-2-2514-1498',
-        aftnAddress: 'RCATYCYX',
-        vhfFreq: ['121.5 MHz', '243.0 MHz'],
-        sourceName: `${source.name}（離線快取）`,
-        sourceUrl: source.url,
-        sourceVerified: false,
-      }),
-    ];
+    return [];
   }
 }
 
-async function scrapeJapanJCAB(): Promise<FirContactRecord[]> {
-  const source = SCRAPER_SOURCES.JAPAN;
-  let sourceVerified = false;
+// ──────────────────────────────────────────────
+//  英國：NATS eAIP（Eurocontrol 標準結構）
+// ──────────────────────────────────────────────
+
+function normalizeUkPhone(raw: string) {
+  const digits = raw.replace(/\D/g, '');
+  if (!digits.startsWith('0')) return raw.trim();
+  return `+44-${digits.slice(1, 5)}-${digits.slice(5)}`;
+}
+
+interface UkAccContacts {
+  london?: ParsedUnitRow;
+  scottish?: ParsedUnitRow;
+}
+
+/**
+ * GEN 3.3 ATS Unit Address 表格：Name | Postal Address | Tel | Fax | Telex | AFS。
+ * 注意：不能用 Swanwick/Prestwick 當關鍵字——London Terminal Control 也在 Swanwick，會誤中。
+ */
+function parseUkAccContacts(html: string): UkAccContacts {
+  const $ = cheerio.load(html);
+  const result: UkAccContacts = {};
+
+  $('tr').each((_, row) => {
+    const rowText = sanitizeText($(row).text());
+    const target = /London\s+(Area\s+Control|AC\b)/i.test(rowText)
+      ? 'london'
+      : /Scottish\s+(AC\b|Area\s+Control)/i.test(rowText)
+        ? 'scottish'
+        : null;
+
+    if (!target || result[target]) return;
+
+    const aftnMatch = rowText.match(/\bEG[A-Z]{6}\b/);
+    const phones = rowText.match(/\b0\d{3,4}[-\s]?\d{6,7}\b/g) ?? [];
+    if (!aftnMatch || phones.length === 0) return;
+
+    result[target] = {
+      phoneNumber: normalizeUkPhone(phones[0]),
+      faxNumber: phones[1] ? normalizeUkPhone(phones[1]) : undefined,
+      aftnAddress: aftnMatch[0],
+    };
+  });
+
+  return result;
+}
+
+async function resolveUkGen33Url() {
+  const source = SCRAPER_SOURCES.UK;
+  const landing = await fetchPage(source.url);
+  const indexUrl =
+    findFirstLink(
+      landing.data,
+      source.url,
+      (href, text) =>
+        href.includes('htmlAIP') && (href.includes('index-en-GB.html') || /current/i.test(text))
+    ) || `${source.fallbackGen33Url}htmlAIP/Publications/${getCurrentAiracDate()}-AIRAC/html/index-en-GB.html`;
+
+  return {
+    url: indexUrl.replace('index-en-GB.html', 'eAIP/EG-GEN-3.3-en-GB.html'),
+    reachable: landing.status < 400,
+  };
+}
+
+async function scrapeUKEAip(): Promise<FirContactRecord[]> {
+  const source = SCRAPER_SOURCES.UK;
 
   try {
-    const response = await fetchPage(source.url);
-    sourceVerified = response.status < 400;
-  } catch {
-    sourceVerified = false;
-  }
+    const { url, reachable } = await resolveUkGen33Url();
+    if (!reachable) return [];
 
-  return [
-    buildRecord({
-      id: 'RJJJ-ACC',
-      firIcao: 'RJJJ',
-      firName: 'Fukuoka FIR',
-      regionCode: source.regionCode,
-      facilityName: 'Fukuoka Area Control Centre',
-      facilityType: 'ACC',
-      phoneNumber: '+81-92-622-8500',
-      faxNumber: '+81-92-622-8510',
-      aftnAddress: 'RJJJZQZX',
-      vhfFreq: ['133.9 MHz', '124.7 MHz'],
-      sourceName: `${source.name}（已發布 AIP 資料）`,
-      sourceUrl: source.url,
-      sourceVerified,
-    }),
-    // 注意：Tokyo FIR 已於 2006 年併入 Fukuoka FIR (RJJJ)，日本全境為單一 FIR
-  ];
+    const page = await fetchPage(url);
+    if (page.status >= 400) return [];
+
+    const parsed = parseUkAccContacts(page.data);
+    const records: FirContactRecord[] = [];
+
+    if (parsed.london) {
+      records.push(buildRecord({
+        id: 'EGTT-ACC',
+        firIcao: 'EGTT',
+        firName: 'London FIR',
+        regionCode: source.regionCode,
+        facilityName: 'London Area Control Centre (Swanwick)',
+        facilityType: 'ACC',
+        phoneNumber: parsed.london.phoneNumber!,
+        faxNumber: parsed.london.faxNumber,
+        aftnAddress: parsed.london.aftnAddress!,
+        vhfFreq: [GUARD_FREQ],
+        sourceName: source.name,
+        sourceUrl: url,
+      }));
+    }
+
+    if (parsed.scottish) {
+      records.push(buildRecord({
+        id: 'EGPX-ACC',
+        firIcao: 'EGPX',
+        firName: 'Scottish FIR',
+        regionCode: source.regionCode,
+        facilityName: 'Scottish Area Control Centre (Prestwick)',
+        facilityType: 'ACC',
+        phoneNumber: parsed.scottish.phoneNumber!,
+        faxNumber: parsed.scottish.faxNumber,
+        aftnAddress: parsed.scottish.aftnAddress!,
+        vhfFreq: [GUARD_FREQ],
+        sourceName: source.name,
+        sourceUrl: url,
+      }));
+    }
+
+    return records;
+  } catch {
+    return [];
+  }
 }
+
+// ──────────────────────────────────────────────
+//  新加坡：AIM-SG eAIP（Eurocontrol 標準結構）
+// ──────────────────────────────────────────────
 
 function normalizeSgPhone(raw: string) {
   const digits = raw.replace(/\D/g, '').replace(/^65/, '');
   return `+65-${digits.slice(0, 4)}-${digits.slice(4)}`;
 }
 
-/** 解析 Singapore eAIP GEN 3.3 的 ATS unit address 表格（Unit | Postal | Tel | Fax | Telex | AFS） */
-function parseSgAccContact(html: string): ParsedAccContact | null {
+/** GEN 3.3 表格：Unit | Postal | Tel | Fax | Telex | AFS */
+function parseSgAccContact(html: string): ParsedUnitRow | null {
   const $ = cheerio.load(html);
-  let parsed: ParsedAccContact | null = null;
+  let parsed: ParsedUnitRow | null = null;
 
   $('tr').each((_, row) => {
     if (parsed) return;
@@ -529,503 +525,50 @@ function parseSgAccContact(html: string): ParsedAccContact | null {
 
 async function scrapeSingaporeCaas(): Promise<FirContactRecord[]> {
   const source = SCRAPER_SOURCES.SINGAPORE;
-  let parsed: ParsedAccContact | null = null;
-  let sourceVerified = false;
-  let sourceUrl = source.fallbackGen33Url;
 
   try {
     // 依規格不寫死最終頁：入口頁找 current eAIP index，再導向 GEN 3.3
     const landing = await fetchPage(source.fallbackGen33Url);
-    sourceVerified = landing.status < 400;
+    if (landing.status >= 400) return [];
 
     const indexUrl = findFirstLink(
       landing.data,
       source.fallbackGen33Url,
       (href) => href.includes('html/index-en-GB.html')
     );
+    if (!indexUrl) return [];
 
-    if (indexUrl) {
-      const gen33Url = indexUrl.replace('index-en-GB.html', 'eAIP/SG-GEN-3.3-en-GB.html');
-      const page = await fetchPage(gen33Url);
-      if (page.status < 400) {
-        parsed = parseSgAccContact(page.data);
-        if (parsed) sourceUrl = gen33Url;
-      }
-    }
-  } catch {
-    sourceVerified = false;
-  }
+    const gen33Url = indexUrl.replace('index-en-GB.html', 'eAIP/SG-GEN-3.3-en-GB.html');
+    const page = await fetchPage(gen33Url);
+    if (page.status >= 400) return [];
 
-  return [
-    buildRecord({
-      id: 'WSJC-ACC',
-      firIcao: 'WSJC',
-      firName: 'Singapore FIR',
-      regionCode: source.regionCode,
-      facilityName: 'Singapore Area Control Centre (SATCC)',
-      facilityType: 'ACC',
-      phoneNumber: parsed?.phoneNumber ?? '+65-6541-2668',
-      faxNumber: parsed?.faxNumber ?? '+65-6545-7526',
-      aftnAddress: parsed?.aftnAddress ?? 'WSJCZQZX',
-      vhfFreq: ['125.25 MHz', '128.6 MHz'],
-      sourceName: source.name,
-      sourceUrl,
-      sourceVerified,
-      fieldsParsed: Boolean(parsed),
-    }),
-  ];
-}
-
-async function scrapeHongKongCad(): Promise<FirContactRecord[]> {
-  const source = SCRAPER_SOURCES.HONG_KONG;
-  const { sourceVerified, sourceUrl } = await probeSource(source);
-
-  return [
-    buildRecord({
-      id: 'VHHK-ACC',
-      firIcao: 'VHHK',
-      firName: 'Hong Kong FIR',
-      regionCode: source.regionCode,
-      facilityName: 'Hong Kong Area Control Centre',
-      facilityType: 'ACC',
-      phoneNumber: '+852-2910-6888',
-      faxNumber: '+852-2910-6553',
-      aftnAddress: 'VHHKZQZX',
-      vhfFreq: ['128.3 MHz', '132.45 MHz'],
-      sourceName: `${source.name}（標準 ICAO eAIP）`,
-      sourceUrl,
-      sourceVerified,
-    }),
-  ];
-}
-
-async function scrapeCanadaNav(): Promise<FirContactRecord[]> {
-  const source = SCRAPER_SOURCES.CANADA;
-  const { sourceVerified, sourceUrl } = await probeSource(source);
-
-  return [
-    buildRecord({
-      id: 'CZVR-ACC',
-      firIcao: 'CZVR',
-      firName: 'Vancouver FIR',
-      regionCode: source.regionCode,
-      facilityName: 'Vancouver Area Control Centre',
-      facilityType: 'ACC',
-      phoneNumber: '+1-604-586-4500',
-      faxNumber: '+1-604-586-4599',
-      aftnAddress: 'CZVRZQZX',
-      vhfFreq: ['132.65 MHz', '133.2 MHz'],
-      sourceName: `${source.name}（PDF 解析策略）`,
-      sourceUrl,
-      sourceVerified,
-    }),
-    buildRecord({
-      id: 'CZWG-ACC',
-      firIcao: 'CZWG',
-      firName: 'Winnipeg FIR',
-      regionCode: source.regionCode,
-      facilityName: 'Winnipeg Area Control Centre',
-      facilityType: 'ACC',
-      phoneNumber: '+1-204-983-8338',
-      aftnAddress: 'CZWGZQZX',
-      vhfFreq: ['127.57 MHz', '134.2 MHz'],
-      sourceName: `${source.name}（PDF 解析策略）`,
-      sourceUrl,
-      sourceVerified,
-    }),
-  ];
-}
-
-async function scrapeNewZealandAirways(): Promise<FirContactRecord[]> {
-  const source = SCRAPER_SOURCES.NEW_ZEALAND;
-  const pdfUrl = source.fallbackGen33Url;
-
-  let parsed: ParsedAccContact | null = null;
-  let sourceVerified = false;
-
-  try {
-    const response = await axios.get<ArrayBuffer>(pdfUrl, {
-      timeout: 15000,
-      responseType: 'arraybuffer',
-      headers: { 'User-Agent': 'Mozilla/5.0 (AIP Ops Bot)' },
-      validateStatus: (status) => status < 500,
-    });
-
-    sourceVerified = response.status < 400;
-    if (sourceVerified) {
-      parsed = await parseNzChristchurchContact(Buffer.from(response.data));
-    }
-  } catch {
-    sourceVerified = false;
-  }
-
-  return [
-    // 種子值出自 AIP New Zealand GEN 3.3 Table 3.3-2（ATS Unit Address List）
-    buildRecord({
-      id: 'NZZC-ACC',
-      firIcao: 'NZZC',
-      firName: 'New Zealand FIR',
-      regionCode: source.regionCode,
-      facilityName: 'Christchurch Area Control Centre',
-      facilityType: 'ACC',
-      phoneNumber: parsed?.phoneNumber ?? '+64-3-358-1694',
-      faxNumber: parsed?.faxNumber ?? '+64-3-358-1691',
-      aftnAddress: parsed?.aftnAddress ?? 'NZZCZQZX',
-      vhfFreq: ['121.5 MHz'],
-      sourceName: `${source.name}（GEN 3.3 官方 PDF）`,
-      sourceUrl: pdfUrl,
-      sourceVerified,
-      fieldsParsed: Boolean(parsed),
-    }),
-  ];
-}
-
-async function scrapeBrazilDecea(): Promise<FirContactRecord[]> {
-  const source = SCRAPER_SOURCES.BRAZIL;
-  const { sourceVerified, sourceUrl } = await probeSource(source);
-
-  return [
-    buildRecord({
-      id: 'SBBS-ACC',
-      firIcao: 'SBBS',
-      firName: 'Brasilia FIR',
-      regionCode: source.regionCode,
-      facilityName: 'Brasilia ACC',
-      facilityType: 'ACC',
-      phoneNumber: '+55-61-3364-9000',
-      aftnAddress: 'SBBSZQZX',
-      vhfFreq: ['126.45 MHz', '127.1 MHz'],
-      sourceName: `${source.name}（AIP Brasil 入口）`,
-      sourceUrl,
-      sourceVerified,
-    }),
-    buildRecord({
-      id: 'SBAO-ACC',
-      firIcao: 'SBAO',
-      firName: 'Atlantico FIR',
-      regionCode: source.regionCode,
-      facilityName: 'Atlantico ACC',
-      facilityType: 'ACC',
-      phoneNumber: '+55-81-2129-8400',
-      aftnAddress: 'SBAOZQZX',
-      vhfFreq: ['127.85 MHz', '128.9 MHz'],
-      sourceName: `${source.name}（AIP Brasil 入口）`,
-      sourceUrl,
-      sourceVerified,
-    }),
-  ];
-}
-
-async function scrapeEurocontrolEad(): Promise<FirContactRecord[]> {
-  const source = SCRAPER_SOURCES.EUROCONTROL;
-  const { sourceVerified, sourceUrl } = await probeSource(source);
-
-  return [
-    buildRecord({
-      id: 'LFFF-ACC',
-      firIcao: 'LFFF',
-      firName: 'Paris FIR',
-      regionCode: source.regionCode,
-      facilityName: 'Paris Area Control Centre',
-      facilityType: 'ACC',
-      phoneNumber: '+33-1-4932-1111',
-      aftnAddress: 'LFFFZQZX',
-      vhfFreq: ['128.1 MHz', '135.7 MHz'],
-      sourceName: `${source.name}（PAMS Light 聚合入口）`,
-      sourceUrl,
-      sourceVerified,
-    }),
-    buildRecord({
-      id: 'EDWW-ACC',
-      firIcao: 'EDWW',
-      firName: 'Bremen FIR',
-      regionCode: source.regionCode,
-      facilityName: 'Bremen Area Control Centre',
-      facilityType: 'ACC',
-      phoneNumber: '+49-421-5363-0',
-      aftnAddress: 'EDWWZQZX',
-      vhfFreq: ['127.52 MHz', '134.67 MHz'],
-      sourceName: `${source.name}（PAMS Light 聚合入口）`,
-      sourceUrl,
-      sourceVerified,
-    }),
-    buildRecord({
-      id: 'LIRR-ACC',
-      firIcao: 'LIRR',
-      firName: 'Roma FIR',
-      regionCode: source.regionCode,
-      facilityName: 'Roma Area Control Centre',
-      facilityType: 'ACC',
-      phoneNumber: '+39-06-81661',
-      aftnAddress: 'LIRRZQZX',
-      vhfFreq: ['125.8 MHz', '133.75 MHz'],
-      sourceName: `${source.name}（PAMS Light 聚合入口）`,
-      sourceUrl,
-      sourceVerified,
-    }),
-  ];
-}
-
-async function scrapeAustraliaAirservices(): Promise<FirContactRecord[]> {
-  const source = SCRAPER_SOURCES.AUSTRALIA;
-
-  try {
-    const { url, sourceVerified } = await resolveAustraliaGen33Url();
-    await fetchPage(url);
+    const parsed = parseSgAccContact(page.data);
+    if (!parsed) return [];
 
     return [
       buildRecord({
-        id: 'YMMM-ACC',
-        firIcao: 'YMMM',
-        firName: 'Melbourne FIR',
+        id: 'WSJC-ACC',
+        firIcao: 'WSJC',
+        firName: 'Singapore FIR',
         regionCode: source.regionCode,
-        facilityName: 'Melbourne Centre',
+        facilityName: 'Singapore Area Control Centre (SATCC)',
         facilityType: 'ACC',
-        phoneNumber: '+61-3-9235-0300',
-        faxNumber: '+61-3-9235-0310',
-        aftnAddress: 'YMMMZQZX',
-        vhfFreq: ['124.2 MHz', '135.2 MHz'],
+        phoneNumber: parsed.phoneNumber!,
+        faxNumber: parsed.faxNumber,
+        aftnAddress: parsed.aftnAddress!,
+        vhfFreq: [GUARD_FREQ],
         sourceName: source.name,
-        sourceUrl: url,
-        sourceVerified,
-      }),
-      buildRecord({
-        id: 'YBBB-ACC',
-        firIcao: 'YBBB',
-        firName: 'Brisbane FIR',
-        regionCode: source.regionCode,
-        facilityName: 'Brisbane Centre',
-        facilityType: 'ACC',
-        phoneNumber: '+61-7-3860-4700',
-        faxNumber: '+61-7-3860-4710',
-        aftnAddress: 'YBBBZQZX',
-        vhfFreq: ['127.6 MHz', '122.4 MHz'],
-        sourceName: source.name,
-        sourceUrl: url,
-        sourceVerified,
+        sourceUrl: gen33Url,
       }),
     ];
   } catch {
-    return [
-      buildRecord({
-        id: 'YMMM-ACC-CACHE',
-        firIcao: 'YMMM',
-        firName: 'Melbourne FIR',
-        regionCode: source.regionCode,
-        facilityName: 'Melbourne Centre',
-        facilityType: 'ACC',
-        phoneNumber: '+61-3-9235-0300',
-        faxNumber: '+61-3-9235-0310',
-        aftnAddress: 'YMMMZQZX',
-        vhfFreq: ['124.2 MHz', '135.2 MHz'],
-        sourceName: `${source.name}（離線快取）`,
-        sourceUrl: source.fallbackGen33Url,
-        sourceVerified: false,
-      }),
-      buildRecord({
-        id: 'YBBB-ACC-CACHE',
-        firIcao: 'YBBB',
-        firName: 'Brisbane FIR',
-        regionCode: source.regionCode,
-        facilityName: 'Brisbane Centre',
-        facilityType: 'ACC',
-        phoneNumber: '+61-7-3860-4700',
-        faxNumber: '+61-7-3860-4710',
-        aftnAddress: 'YBBBZQZX',
-        vhfFreq: ['127.6 MHz', '122.4 MHz'],
-        sourceName: `${source.name}（離線快取）`,
-        sourceUrl: source.fallbackGen33Url,
-        sourceVerified: false,
-      }),
-    ];
+    return [];
   }
 }
 
-async function scrapeUKEAip(): Promise<FirContactRecord[]> {
-  const source = SCRAPER_SOURCES.UK;
-
-  try {
-    const { url, sourceVerified } = await resolveUkGen33Url();
-    const page = await fetchPage(url);
-    const parsed = page.status < 400 ? parseUkAccContacts(page.data) : {};
-
-    return [
-      buildRecord({
-        id: 'EGTT-ACC',
-        firIcao: 'EGTT',
-        firName: 'London FIR',
-        regionCode: source.regionCode,
-        facilityName: 'London Area Control Centre (Swanwick)',
-        facilityType: 'ACC',
-        phoneNumber: parsed.london?.phoneNumber ?? '+44-1489-612000',
-        faxNumber: parsed.london?.faxNumber,
-        aftnAddress: parsed.london?.aftnAddress ?? 'EGTTZRZO',
-        vhfFreq: ['135.58 MHz', '118.825 MHz'],
-        sourceName: source.name,
-        sourceUrl: url,
-        sourceVerified,
-        fieldsParsed: Boolean(parsed.london),
-      }),
-      buildRecord({
-        id: 'EGPX-ACC',
-        firIcao: 'EGPX',
-        firName: 'Scottish FIR',
-        regionCode: source.regionCode,
-        facilityName: 'Scottish Area Control Centre (Prestwick)',
-        facilityType: 'ACC',
-        phoneNumber: parsed.scottish?.phoneNumber ?? '+44-1292-479800',
-        faxNumber: parsed.scottish?.faxNumber,
-        aftnAddress: parsed.scottish?.aftnAddress ?? 'EGPXZRZX',
-        vhfFreq: ['119.53 MHz', '118.425 MHz'],
-        sourceName: source.name,
-        sourceUrl: url,
-        sourceVerified,
-        fieldsParsed: Boolean(parsed.scottish),
-      }),
-    ];
-  } catch {
-    return [
-      buildRecord({
-        id: 'EGTT-ACC-CACHE',
-        firIcao: 'EGTT',
-        firName: 'London FIR',
-        regionCode: source.regionCode,
-        facilityName: 'London Area Control Centre (Swanwick)',
-        facilityType: 'ACC',
-        phoneNumber: '+44-1489-612000',
-        aftnAddress: 'EGTTZRZO',
-        vhfFreq: ['135.58 MHz', '118.825 MHz'],
-        sourceName: `${source.name}（離線快取）`,
-        sourceUrl: source.url,
-        sourceVerified: false,
-      }),
-      buildRecord({
-        id: 'EGPX-ACC-CACHE',
-        firIcao: 'EGPX',
-        firName: 'Scottish FIR',
-        regionCode: source.regionCode,
-        facilityName: 'Scottish Area Control Centre (Prestwick)',
-        facilityType: 'ACC',
-        phoneNumber: '+44-1292-692000',
-        aftnAddress: 'EGPXZRZX',
-        vhfFreq: ['119.53 MHz', '118.425 MHz'],
-        sourceName: `${source.name}（離線快取）`,
-        sourceUrl: source.url,
-        sourceVerified: false,
-      }),
-    ];
-  }
-}
-
-async function scrapeFaaNasr(): Promise<FirContactRecord[]> {
-  const source = SCRAPER_SOURCES.USA_FAA;
-  let sourceVerified = false;
-
-  try {
-    const response = await fetchPage(source.url);
-    sourceVerified = response.status < 400;
-  } catch {
-    sourceVerified = false;
-  }
-
-  return [
-    buildRecord({
-      id: 'KZOA-ARTCC',
-      firIcao: 'KZOA',
-      firName: 'Oakland ARTCC',
-      regionCode: source.regionCode,
-      facilityName: 'Oakland ARTCC',
-      facilityType: 'ARTCC',
-      phoneNumber: '+1-510-745-3100',
-      aftnAddress: 'KZOAYDYX',
-      vhfFreq: ['132.9 MHz', '127.4 MHz'],
-      sourceName: source.name,
-      sourceUrl: source.url,
-      sourceVerified,
-    }),
-    buildRecord({
-      id: 'KZNY-ARTCC',
-      firIcao: 'KZNY',
-      firName: 'New York ARTCC',
-      regionCode: source.regionCode,
-      facilityName: 'New York ARTCC',
-      facilityType: 'ARTCC',
-      phoneNumber: '+1-631-323-0500',
-      aftnAddress: 'KZNYYYYX',
-      vhfFreq: ['127.0 MHz', '135.85 MHz'],
-      sourceName: source.name,
-      sourceUrl: source.url,
-      sourceVerified,
-    }),
-    buildRecord({
-      id: 'KZLA-ARTCC',
-      firIcao: 'KZLA',
-      firName: 'Los Angeles ARTCC',
-      regionCode: source.regionCode,
-      facilityName: 'Los Angeles ARTCC',
-      facilityType: 'ARTCC',
-      phoneNumber: '+1-661-944-9401',
-      aftnAddress: 'KZLAYDYX',
-      vhfFreq: ['135.5 MHz', '127.3 MHz'],
-      sourceName: source.name,
-      sourceUrl: source.url,
-      sourceVerified,
-    }),
-  ];
-}
-
-async function scrapeSkyvector(): Promise<FirContactRecord[]> {
-  const source = SCRAPER_SOURCES.SKYVECTOR;
-
-  try {
-    const response = await fetchPage(source.fallbackGen33Url);
-    const $ = cheerio.load(response.data);
-    const frequencies: string[] = [];
-
-    $('table tr').each((_, row) => {
-      const type = sanitizeText($(row).find('td').eq(0).text());
-      const freq = sanitizeText($(row).find('td').eq(1).text());
-
-      if (type && /\d+\.\d+/.test(freq)) {
-        frequencies.push(`${type} ${freq}`);
-      }
-    });
-
-    return [
-      buildRecord({
-        id: 'RCTP-APP',
-        firIcao: 'RCAA',
-        firName: 'Taipei FIR',
-        regionCode: source.regionCode,
-        facilityName: 'Taipei Approach',
-        facilityType: 'APP',
-        phoneNumber: '+886-3-398-2631',
-        aftnAddress: 'RCTPYNYX',
-        vhfFreq: frequencies.slice(0, 4).length > 0 ? frequencies.slice(0, 4) : ['119.7 MHz', '121.2 MHz'],
-        sourceName: source.name,
-        sourceUrl: source.fallbackGen33Url,
-        sourceVerified: response.status < 400,
-      }),
-    ];
-  } catch {
-    return [
-      buildRecord({
-        id: 'RCTP-APP-CACHE',
-        firIcao: 'RCAA',
-        firName: 'Taipei FIR',
-        regionCode: source.regionCode,
-        facilityName: 'Taipei Approach',
-        facilityType: 'APP',
-        phoneNumber: '+886-3-398-2631',
-        aftnAddress: 'RCTPYNYX',
-        vhfFreq: ['119.7 MHz', '121.2 MHz'],
-        sourceName: `${source.name}（離線快取）`,
-        sourceUrl: source.url,
-        sourceVerified: false,
-      }),
-    ];
-  }
-}
+// ──────────────────────────────────────────────
+//  彙整
+// ──────────────────────────────────────────────
 
 export interface GetContactsOptions {
   regionCode?: string;
@@ -1036,25 +579,16 @@ export interface GetContactsOptions {
 export async function getFirContactsPaginated(options: GetContactsOptions = {}): Promise<PaginatedContacts> {
   const { regionCode, page = 1, pageSize = 20 } = options;
 
-  const results = await Promise.all([
+  const settled = await Promise.allSettled([
     scrapeTaiwanANWS(),
-    scrapeJapanJCAB(),
-    scrapeSingaporeCaas(),
-    scrapeHongKongCad(),
-    scrapeAustraliaAirservices(),
     scrapeUKEAip(),
-    scrapeCanadaNav(),
-    scrapeNewZealandAirways(),
-    scrapeBrazilDecea(),
-    scrapeEurocontrolEad(),
-    scrapeFaaNasr(),
-    scrapeSkyvector(),
+    scrapeSingaporeCaas(),
   ]);
 
   const deduped = Array.from(
     new Map(
-      results
-        .flat()
+      settled
+        .flatMap((result) => (result.status === 'fulfilled' ? result.value : []))
         .sort((left, right) => left.firName.localeCompare(right.firName) || left.facilityName.localeCompare(right.facilityName))
         .map((contact) => [contact.id, contact])
     ).values()
@@ -1099,24 +633,5 @@ export async function getFirContactsPaginated(options: GetContactsOptions = {}):
 
 export async function getFirContacts(): Promise<FirContactRecord[]> {
   const result = await getFirContactsPaginated({ pageSize: 100 });
-  return result.data.length > 0 ? result.data : getFallbackContacts();
-}
-
-function getFallbackContacts(): FirContactRecord[] {
-  return [
-    buildRecord({
-      id: 'RCAA-FALLBACK',
-      firIcao: 'RCAA',
-      firName: 'Taipei FIR',
-      regionCode: SCRAPER_SOURCES.TAIWAN.regionCode,
-      facilityName: 'Taiwan RCC',
-      facilityType: 'RCC',
-      phoneNumber: '+886-2-2514-1498',
-      aftnAddress: 'RCATYCYX',
-      vhfFreq: ['121.5 MHz', '243.0 MHz'],
-      sourceName: '硬編碼備援快取',
-      sourceUrl: SCRAPER_SOURCES.TAIWAN.url,
-      sourceVerified: false,
-    }),
-  ];
+  return result.data;
 }

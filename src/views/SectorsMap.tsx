@@ -34,6 +34,11 @@ export default function SectorsMap({ firClusters, isLoading }: SectorsMapProps) 
         </div>
 
         <div className="mt-4 max-h-[560px] space-y-2 overflow-y-auto pr-1">
+          {!isLoading && firClusters.length === 0 && (
+            <p className="px-2 py-6 text-center font-mono text-sm font-bold text-[#8a7a5c]">
+              暫無即時航區資料
+            </p>
+          )}
           {firClusters.map((cluster) => {
             const isActive = cluster.firIcao === activeCluster?.firIcao;
             return (
